@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/riftwerx/company-research-mcp/internal/companyhouse"
+	"github.com/riftwerx/company-research/internal/companyhouse"
 )
 
 func TestValidateCHNumber(t *testing.T) {

@@ -1,4 +1,4 @@
-module github.com/riftwerx/company-research-mcp
+module github.com/riftwerx/company-research
 
 go 1.26.3
 

@@ -1,4 +1,4 @@
-# company-research-mcp
+# company-research
 
 An MCP server that fetches official company filings — annual reports, AGM documents, regulatory
 announcements — from public sources and makes them available to an AI client.
@@ -12,34 +12,58 @@ announcements — from public sources and makes them available to an AI client.
 **Download a pre-built binary** (no Go required):
 
 Download the latest release for your platform from
-[GitHub Releases](https://github.com/riftwerx/company-research-mcp/releases/latest),
+[GitHub Releases](https://github.com/riftwerx/company-research/releases/latest),
 extract the archive, and place the binary on your `$PATH`.
 
 **Install via `go install`:**
 
 ```bash
-go install github.com/riftwerx/company-research-mcp/cmd/company-research-mcp@latest
+go install github.com/riftwerx/company-research/cmd/company-research@latest
 ```
 
 **Or build from source** (installs to `$GOPATH/bin`):
 
 ```bash
-git clone https://github.com/riftwerx/company-research-mcp
-cd company-research-mcp
+git clone https://github.com/riftwerx/company-research
+cd company-research
 make local-release
 ```
 
 > `make` targets require a Unix-like environment (Linux, macOS, or WSL on Windows).
-> Windows users without WSL can run `go install ./cmd/company-research-mcp` directly —
+> Windows users without WSL can run `go install ./cmd/company-research` directly —
 > the binary is fully Windows-compatible; only the build tooling requires Unix.
 
-The binary is named `company-research-mcp`. Ensure `$(go env GOPATH)/bin` is on your `$PATH`.
+The binary is named `company-research`. Ensure `$(go env GOPATH)/bin` is on your `$PATH`.
 
 Verify the installation:
 
 ```bash
-company-research-mcp --version
+company-research --version
 ```
+
+## Upgrading from v0.3.x
+
+The binary was renamed from `company-research-mcp` to `company-research` after v0.3.0. After installing the new binary, remove the old one and update your MCP client config:
+
+**`go install` users:**
+
+```bash
+rm "$(go env GOPATH)/bin/company-research-mcp"
+```
+
+**Pre-built binary users:** delete the old `company-research-mcp` binary from wherever you placed it on your `$PATH`.
+
+Then update the `command:` field in your MCP client config from `company-research-mcp` to `company-research`.
+
+**Migrate your cache** (optional — skipping means cached filings are re-downloaded on next use):
+
+| Platform | Command |
+|----------|---------|
+| Linux | `mv ~/.cache/company-research.mcp ~/.cache/company-research` |
+| macOS | `mv ~/Library/Caches/company-research.mcp ~/Library/Caches/company-research` |
+| Windows | `Rename-Item "$env:LOCALAPPDATA\company-research.mcp" company-research` |
+
+---
 
 ## Prerequisites
 
@@ -54,7 +78,7 @@ https://developer.company-information.service.gov.uk
 claude mcp add --transport stdio company-research \
   --scope user \
   --env CH_API_KEY=your-key-here \
-  -- company-research-mcp
+  -- company-research
 ```
 
 ### Claude Desktop
@@ -68,7 +92,7 @@ Add to `claude_desktop_config.json`:
 {
   "mcpServers": {
     "company-research": {
-      "command": "company-research-mcp",
+      "command": "company-research",
       "env": {
         "CH_API_KEY": "your-key-here"
       }
@@ -85,7 +109,7 @@ Add to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project):
 {
   "mcpServers": {
     "company-research": {
-      "command": "company-research-mcp",
+      "command": "company-research",
       "env": {
         "CH_API_KEY": "your-key-here"
       }
@@ -102,7 +126,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 {
   "mcpServers": {
     "company-research": {
-      "command": "company-research-mcp",
+      "command": "company-research",
       "env": {
         "CH_API_KEY": "your-key-here"
       }
@@ -120,7 +144,7 @@ Add to `~/.continue/config.json` under `mcpServers`:
   "mcpServers": [
     {
       "name": "company-research",
-      "command": "company-research-mcp",
+      "command": "company-research",
       "env": {
         "CH_API_KEY": "your-key-here"
       }

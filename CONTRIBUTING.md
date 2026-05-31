@@ -9,8 +9,8 @@
 ## Dev workflow
 
 ```bash
-git clone https://github.com/riftwerx/company-research-mcp
-cd company-research-mcp
+git clone https://github.com/riftwerx/company-research
+cd company-research
 
 make test          # run unit tests
 make lint          # run linter
@@ -64,4 +64,4 @@ Use conventional prefixes — goreleaser uses these to build the changelog:
 
 ## Reporting issues
 
-Open a [GitHub Issue](https://github.com/riftwerx/company-research-mcp/issues).
+Open a [GitHub Issue](https://github.com/riftwerx/company-research/issues).

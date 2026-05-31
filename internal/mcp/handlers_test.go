@@ -19,9 +19,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/riftwerx/company-research-mcp/internal/archive"
-	"github.com/riftwerx/company-research-mcp/internal/cache"
-	"github.com/riftwerx/company-research-mcp/internal/companyhouse"
+	"github.com/riftwerx/company-research/internal/archive"
+	"github.com/riftwerx/company-research/internal/cache"
+	"github.com/riftwerx/company-research/internal/companyhouse"
 )
 
 // mockCHService is a testify mock for CompanyHouseService.

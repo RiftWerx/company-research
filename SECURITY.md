@@ -4,7 +4,7 @@
 
 Please **do not** open a public GitHub issue for security vulnerabilities.
 
-Use **[GitHub's private vulnerability reporting](https://github.com/RiftWerx/company-research-mcp/security/advisories/new)**
+Use **[GitHub's private vulnerability reporting](https://github.com/RiftWerx/company-research/security/advisories/new)**
 to report a vulnerability confidentially. Alternatively, you can find contact
 details on the [maintainer's GitHub profile](https://github.com/RiftWerx).
 

@@ -1,7 +1,7 @@
 .PHONY: test lint vuln local-release release-dry-run
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//')
-LDFLAGS := -X github.com/riftwerx/company-research-mcp/internal/mcp.Version=$(VERSION)
+LDFLAGS := -X github.com/riftwerx/company-research/internal/mcp.Version=$(VERSION)
 
 test:
 	go test -race ./...
@@ -13,7 +13,7 @@ vuln:
 	govulncheck ./...
 
 local-release:
-	go install -ldflags "$(LDFLAGS)" ./cmd/company-research-mcp
+	go install -ldflags "$(LDFLAGS)" ./cmd/company-research
 
 # goreleaser version must match the version pinned in .github/workflows/release.yml.
 release-dry-run:
