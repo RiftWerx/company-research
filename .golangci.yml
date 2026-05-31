@@ -49,7 +49,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/riftwerx/company-research-mcp
+        - github.com/riftwerx/company-research
   exclusions:
     generated: lax
     paths:

@@ -5,14 +5,14 @@ import (
 	"log"
 	"os"
 
-	"github.com/riftwerx/company-research-mcp/internal/cache"
-	"github.com/riftwerx/company-research-mcp/internal/client"
-	"github.com/riftwerx/company-research-mcp/internal/companyhouse"
-	mcpserver "github.com/riftwerx/company-research-mcp/internal/mcp"
+	"github.com/riftwerx/company-research/internal/cache"
+	"github.com/riftwerx/company-research/internal/client"
+	"github.com/riftwerx/company-research/internal/companyhouse"
+	mcpserver "github.com/riftwerx/company-research/internal/mcp"
 )
 
 // userAgent is sent in the User-Agent header of every outbound HTTP request.
-var userAgent = "company-research-mcp/" + mcpserver.Version
+var userAgent = "company-research/" + mcpserver.Version
 
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {

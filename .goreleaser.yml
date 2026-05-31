@@ -5,13 +5,13 @@ before:
     - go mod tidy
 
 builds:
-  - id: company-research-mcp
-    main: ./cmd/company-research-mcp
-    binary: company-research-mcp
+  - id: company-research
+    main: ./cmd/company-research
+    binary: company-research
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -s -w -X github.com/riftwerx/company-research-mcp/internal/mcp.Version={{.Version}}
+      - -s -w -X github.com/riftwerx/company-research/internal/mcp.Version={{.Version}}
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     ignore:
@@ -41,4 +41,4 @@ changelog:
 release:
   github:
     owner: riftwerx
-    name: company-research-mcp
+    name: company-research

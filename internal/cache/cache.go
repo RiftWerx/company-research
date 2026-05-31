@@ -19,7 +19,7 @@ import (
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver for database/sql
 
-	"github.com/riftwerx/company-research-mcp/internal/mime"
+	"github.com/riftwerx/company-research/internal/mime"
 )
 
 // cacheSubDir is the path under BaseDir where filing files are stored.
@@ -74,10 +74,10 @@ func NewDefaultConfig() Config {
 // The zero value is valid; empty fields are replaced with defaults.
 type Config struct {
 	// BaseDir is the root directory for cached files and the index database.
-	// Default: {os.UserCacheDir()}/company-research.mcp
-	// (e.g. ~/.cache/company-research.mcp on Linux,
-	//  ~/Library/Caches/company-research.mcp on macOS,
-	//  %LOCALAPPDATA%\company-research.mcp on Windows)
+	// Default: {os.UserCacheDir()}/company-research
+	// (e.g. ~/.cache/company-research on Linux,
+	//  ~/Library/Caches/company-research on macOS,
+	//  %LOCALAPPDATA%\company-research on Windows)
 	BaseDir string
 }
 
@@ -98,7 +98,7 @@ func New(cfg Config) (*Cache, error) {
 		if err != nil {
 			return nil, fmt.Errorf("resolve cache dir: %w", err)
 		}
-		baseDir = filepath.Join(cacheDir, "company-research.mcp")
+		baseDir = filepath.Join(cacheDir, "company-research")
 	}
 
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {

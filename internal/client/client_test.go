@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/riftwerx/company-research-mcp/internal/client"
+	"github.com/riftwerx/company-research/internal/client"
 )
 
 func newTestClient(rate float64, burst int, timeout time.Duration) *client.Client {
@@ -180,7 +180,7 @@ func TestClient(t *testing.T) {
 		t.Parallel()
 
 		// Arrange
-		const wantUA = "company-research-mcp/0.1"
+		const wantUA = "company-research/0.1"
 		var gotUA string
 
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

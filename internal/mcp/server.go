@@ -1,4 +1,4 @@
-// Package mcp implements the MCP server and tool handlers for company-research-mcp.
+// Package mcp implements the MCP server and tool handlers for company-research.
 package mcp
 
 import (
@@ -10,7 +10,7 @@ const serverName = "company-research"
 
 // Version is the server version, exported for use in the binary's user-agent string.
 // "dev" is the default for local builds; release builds have this overridden via
-// -ldflags "-X github.com/riftwerx/company-research-mcp/internal/mcp.Version=<tag>"
+// -ldflags "-X github.com/riftwerx/company-research/internal/mcp.Version=<tag>"
 // by goreleaser (or make local-release).
 var Version = "dev"
 

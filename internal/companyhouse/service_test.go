@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/riftwerx/company-research-mcp/internal/companyhouse"
+	"github.com/riftwerx/company-research/internal/companyhouse"
 )
 
 // stubHTTP is a test double for HTTPDoer that delegates to a provided function.

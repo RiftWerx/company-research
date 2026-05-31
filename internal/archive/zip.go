@@ -11,7 +11,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/riftwerx/company-research-mcp/internal/mime"
+	"github.com/riftwerx/company-research/internal/mime"
 )
 
 // MaxEntries is the maximum number of file entries extracted from a single archive.

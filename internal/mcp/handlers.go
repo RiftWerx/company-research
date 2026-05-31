@@ -13,10 +13,10 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/riftwerx/company-research-mcp/internal/archive"
-	"github.com/riftwerx/company-research-mcp/internal/cache"
-	"github.com/riftwerx/company-research-mcp/internal/companyhouse"
-	"github.com/riftwerx/company-research-mcp/internal/xbrl"
+	"github.com/riftwerx/company-research/internal/archive"
+	"github.com/riftwerx/company-research/internal/cache"
+	"github.com/riftwerx/company-research/internal/companyhouse"
+	"github.com/riftwerx/company-research/internal/xbrl"
 )
 
 // CompanyHouseService is the subset of companyhouse.Service that MCP handlers require.

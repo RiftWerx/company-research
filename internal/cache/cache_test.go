@@ -69,7 +69,7 @@ func TestNewDefaultBaseDir(t *testing.T) {
 	if c != nil {
 		defer c.Close()
 	}
-	assert.DirExists(t, filepath.Join(tmpDir, "company-research.mcp"))
+	assert.DirExists(t, filepath.Join(tmpDir, "company-research"))
 }
 
 func TestNew(t *testing.T) {

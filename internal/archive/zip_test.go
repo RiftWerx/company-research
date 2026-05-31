@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/riftwerx/company-research-mcp/internal/archive"
+	"github.com/riftwerx/company-research/internal/archive"
 )
 
 // buildZip creates an in-memory zip archive from a slice of [name, content] pairs.
