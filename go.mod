@@ -1,8 +1,9 @@
 module github.com/riftwerx/company-research
 
-go 1.26.3
+go 1.26.4
 
 require (
+	github.com/alecthomas/kong v1.15.0
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v0.54.0
 	github.com/stretchr/testify v1.11.1

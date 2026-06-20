@@ -11,7 +11,7 @@ builds:
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -s -w -X github.com/riftwerx/company-research/internal/mcp.Version={{.Version}}
+      - -s -w -X github.com/riftwerx/company-research/internal/version.Version={{.Version}}
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     ignore:

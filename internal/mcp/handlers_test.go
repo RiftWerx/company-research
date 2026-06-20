@@ -22,6 +22,7 @@ import (
 	"github.com/riftwerx/company-research/internal/archive"
 	"github.com/riftwerx/company-research/internal/cache"
 	"github.com/riftwerx/company-research/internal/companyhouse"
+	"github.com/riftwerx/company-research/internal/result"
 )
 
 // mockCHService is a testify mock for CompanyHouseService.
@@ -175,11 +176,11 @@ func TestHandleSearchCompany(t *testing.T) {
 		srv := newTestServer(svc)
 
 		// Act
-		result, err := callTool(srv.handleSearchCompany, map[string]any{"query": "Tesco"})
+		toolResult, err := callTool(srv.handleSearchCompany, map[string]any{"query": "Tesco"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
+		assert.False(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error when query is missing", func(t *testing.T) {
@@ -189,11 +190,11 @@ func TestHandleSearchCompany(t *testing.T) {
 		srv := newTestServer(&mockCHService{})
 
 		// Act
-		result, err := callTool(srv.handleSearchCompany, map[string]any{})
+		toolResult, err := callTool(srv.handleSearchCompany, map[string]any{})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error when company is not found", func(t *testing.T) {
@@ -206,11 +207,11 @@ func TestHandleSearchCompany(t *testing.T) {
 		srv := newTestServer(svc)
 
 		// Act
-		result, err := callTool(srv.handleSearchCompany, map[string]any{"query": "NoSuchCompany"})
+		toolResult, err := callTool(srv.handleSearchCompany, map[string]any{"query": "NoSuchCompany"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error when unauthorized", func(t *testing.T) {
@@ -223,11 +224,11 @@ func TestHandleSearchCompany(t *testing.T) {
 		srv := newTestServer(svc)
 
 		// Act
-		result, err := callTool(srv.handleSearchCompany, map[string]any{"query": "Tesco"})
+		toolResult, err := callTool(srv.handleSearchCompany, map[string]any{"query": "Tesco"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error when rate limited", func(t *testing.T) {
@@ -240,11 +241,11 @@ func TestHandleSearchCompany(t *testing.T) {
 		srv := newTestServer(svc)
 
 		// Act
-		result, err := callTool(srv.handleSearchCompany, map[string]any{"query": "Tesco"})
+		toolResult, err := callTool(srv.handleSearchCompany, map[string]any{"query": "Tesco"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should propagate unexpected errors", func(t *testing.T) {
@@ -291,11 +292,11 @@ func TestHandleGetCompanyProfile(t *testing.T) {
 		srv := newTestServer(svc)
 
 		// Act
-		result, err := callTool(srv.handleGetCompanyProfile, map[string]any{"ch_number": "00445790"})
+		toolResult, err := callTool(srv.handleGetCompanyProfile, map[string]any{"ch_number": "00445790"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
+		assert.False(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error when company is not found", func(t *testing.T) {
@@ -308,11 +309,11 @@ func TestHandleGetCompanyProfile(t *testing.T) {
 		srv := newTestServer(svc)
 
 		// Act
-		result, err := callTool(srv.handleGetCompanyProfile, map[string]any{"ch_number": "99999999"})
+		toolResult, err := callTool(srv.handleGetCompanyProfile, map[string]any{"ch_number": "99999999"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error for an invalid ch_number", func(t *testing.T) {
@@ -322,11 +323,11 @@ func TestHandleGetCompanyProfile(t *testing.T) {
 		srv := newTestServer(&mockCHService{})
 
 		// Act — path traversal attempt
-		result, err := callTool(srv.handleGetCompanyProfile, map[string]any{"ch_number": "../../etc/passwd"})
+		toolResult, err := callTool(srv.handleGetCompanyProfile, map[string]any{"ch_number": "../../etc/passwd"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error when ch_number is missing", func(t *testing.T) {
@@ -336,11 +337,11 @@ func TestHandleGetCompanyProfile(t *testing.T) {
 		srv := newTestServer(&mockCHService{})
 
 		// Act
-		result, err := callTool(srv.handleGetCompanyProfile, map[string]any{})
+		toolResult, err := callTool(srv.handleGetCompanyProfile, map[string]any{})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should propagate unexpected errors", func(t *testing.T) {
@@ -395,13 +396,13 @@ func TestHandleListFilings(t *testing.T) {
 		srv := New(svc, fc)
 
 		// Act
-		result, err := callTool(srv.handleListFilings, map[string]any{"ch_number": "00445790"})
+		toolResult, err := callTool(srv.handleListFilings, map[string]any{"ch_number": "00445790"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
-		var out []filingResult
-		require.NoError(t, json.Unmarshal([]byte(resultText(result)), &out))
+		assert.False(t, isToolError(toolResult))
+		var out []result.FilingResult
+		require.NoError(t, json.Unmarshal([]byte(resultText(toolResult)), &out))
 		require.Len(t, out, 1)
 		assert.Equal(t, testDocumentID, out[0].DocumentID)
 		assert.Equal(t, "AA", out[0].Type)
@@ -415,11 +416,11 @@ func TestHandleListFilings(t *testing.T) {
 		srv := newTestServer(&mockCHService{})
 
 		// Act
-		result, err := callTool(srv.handleListFilings, map[string]any{})
+		toolResult, err := callTool(srv.handleListFilings, map[string]any{})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error for an invalid ch_number", func(t *testing.T) {
@@ -429,11 +430,11 @@ func TestHandleListFilings(t *testing.T) {
 		srv := newTestServer(&mockCHService{})
 
 		// Act
-		result, err := callTool(srv.handleListFilings, map[string]any{"ch_number": "../../etc"})
+		toolResult, err := callTool(srv.handleListFilings, map[string]any{"ch_number": "../../etc"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should propagate unexpected errors", func(t *testing.T) {
@@ -476,16 +477,16 @@ func TestHandleFetchFiling(t *testing.T) {
 		srv := New(svc, fc)
 
 		// Act
-		result, err := callTool(srv.handleFetchFiling, map[string]any{
+		toolResult, err := callTool(srv.handleFetchFiling, map[string]any{
 			"ch_number":   "00445790",
 			"document_id": testDocumentID,
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
-		var out fetchResult
-		require.NoError(t, json.Unmarshal([]byte(resultText(result)), &out))
+		assert.False(t, isToolError(toolResult))
+		var out result.FetchResult
+		require.NoError(t, json.Unmarshal([]byte(resultText(toolResult)), &out))
 		assert.Equal(t, "cache", out.Source)
 		assert.Equal(t, "/cache/filing.pdf", out.LocalPath)
 		assert.Equal(t, testDocumentID, out.DocumentID)
@@ -508,16 +509,16 @@ func TestHandleFetchFiling(t *testing.T) {
 		srv := New(svc, fc)
 
 		// Act
-		result, err := callTool(srv.handleFetchFiling, map[string]any{
+		toolResult, err := callTool(srv.handleFetchFiling, map[string]any{
 			"ch_number":   "00445790",
 			"document_id": testDocumentID,
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
-		var out fetchResult
-		require.NoError(t, json.Unmarshal([]byte(resultText(result)), &out))
+		assert.False(t, isToolError(toolResult))
+		var out result.FetchResult
+		require.NoError(t, json.Unmarshal([]byte(resultText(toolResult)), &out))
 		assert.Equal(t, "cache", out.Source)
 		assert.True(t, out.IsArchive)
 		assert.Equal(t, 2, out.TotalInArchive)
@@ -545,16 +546,16 @@ func TestHandleFetchFiling(t *testing.T) {
 		srv := New(svc, fc)
 
 		// Act
-		result, err := callTool(srv.handleFetchFiling, map[string]any{
+		toolResult, err := callTool(srv.handleFetchFiling, map[string]any{
 			"ch_number":   "00445790",
 			"document_id": testDocumentID,
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
-		var out fetchResult
-		require.NoError(t, json.Unmarshal([]byte(resultText(result)), &out))
+		assert.False(t, isToolError(toolResult))
+		var out result.FetchResult
+		require.NoError(t, json.Unmarshal([]byte(resultText(toolResult)), &out))
 		assert.Equal(t, "companies_house", out.Source)
 		assert.Equal(t, testDocumentID, out.DocumentID)
 	})
@@ -573,14 +574,14 @@ func TestHandleFetchFiling(t *testing.T) {
 		srv := New(svc, fc)
 
 		// Act
-		result, err := callTool(srv.handleFetchFiling, map[string]any{
+		toolResult, err := callTool(srv.handleFetchFiling, map[string]any{
 			"ch_number":   "00445790",
 			"document_id": testDocumentID,
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error when document_id is unknown", func(t *testing.T) {
@@ -593,15 +594,15 @@ func TestHandleFetchFiling(t *testing.T) {
 		srv := New(&mockCHService{}, fc)
 
 		// Act
-		result, err := callTool(srv.handleFetchFiling, map[string]any{
+		toolResult, err := callTool(srv.handleFetchFiling, map[string]any{
 			"ch_number":   "00445790",
 			"document_id": "unknown-id",
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
-		assert.Contains(t, resultText(result), "list_filings")
+		assert.True(t, isToolError(toolResult))
+		assert.Contains(t, resultText(toolResult), "list_filings")
 	})
 
 	t.Run("should return a tool error when ch_number is missing", func(t *testing.T) {
@@ -611,11 +612,11 @@ func TestHandleFetchFiling(t *testing.T) {
 		srv := newTestServer(&mockCHService{})
 
 		// Act
-		result, err := callTool(srv.handleFetchFiling, map[string]any{"document_id": testDocumentID})
+		toolResult, err := callTool(srv.handleFetchFiling, map[string]any{"document_id": testDocumentID})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error when document_id is missing", func(t *testing.T) {
@@ -625,11 +626,11 @@ func TestHandleFetchFiling(t *testing.T) {
 		srv := newTestServer(&mockCHService{})
 
 		// Act
-		result, err := callTool(srv.handleFetchFiling, map[string]any{"ch_number": "00445790"})
+		toolResult, err := callTool(srv.handleFetchFiling, map[string]any{"ch_number": "00445790"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error for an invalid ch_number", func(t *testing.T) {
@@ -639,14 +640,14 @@ func TestHandleFetchFiling(t *testing.T) {
 		srv := newTestServer(&mockCHService{})
 
 		// Act
-		result, err := callTool(srv.handleFetchFiling, map[string]any{
+		toolResult, err := callTool(srv.handleFetchFiling, map[string]any{
 			"ch_number":   "../../etc/passwd",
 			"document_id": testDocumentID,
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should extract primary xhtml from a zip response and set is_archive", func(t *testing.T) {
@@ -682,16 +683,16 @@ func TestHandleFetchFiling(t *testing.T) {
 		srv := New(svc, fc)
 
 		// Act
-		result, err := callTool(srv.handleFetchFiling, map[string]any{
+		toolResult, err := callTool(srv.handleFetchFiling, map[string]any{
 			"ch_number":   "00445790",
 			"document_id": testDocumentID,
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
-		var out fetchResult
-		require.NoError(t, json.Unmarshal([]byte(resultText(result)), &out))
+		assert.False(t, isToolError(toolResult))
+		var out result.FetchResult
+		require.NoError(t, json.Unmarshal([]byte(resultText(toolResult)), &out))
 		assert.Equal(t, "application/xhtml+xml", out.ContentType)
 		assert.Equal(t, "companies_house", out.Source)
 		assert.True(t, out.IsArchive)
@@ -729,16 +730,16 @@ func TestHandleFetchFiling(t *testing.T) {
 		srv := New(svc, fc)
 
 		// Act
-		result, err := callTool(srv.handleFetchFiling, map[string]any{
+		toolResult, err := callTool(srv.handleFetchFiling, map[string]any{
 			"ch_number":   "00445790",
 			"document_id": testDocumentID,
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
-		var out fetchResult
-		require.NoError(t, json.Unmarshal([]byte(resultText(result)), &out))
+		assert.False(t, isToolError(toolResult))
+		var out result.FetchResult
+		require.NoError(t, json.Unmarshal([]byte(resultText(toolResult)), &out))
 		assert.Equal(t, "application/xhtml+xml", out.ContentType)
 		assert.True(t, out.IsArchive)
 	})
@@ -764,16 +765,16 @@ func TestHandleFetchFiling(t *testing.T) {
 		srv := New(svc, fc)
 
 		// Act
-		result, err := callTool(srv.handleFetchFiling, map[string]any{
+		toolResult, err := callTool(srv.handleFetchFiling, map[string]any{
 			"ch_number":   "00445790",
 			"document_id": testDocumentID,
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
-		var out fetchResult
-		require.NoError(t, json.Unmarshal([]byte(resultText(result)), &out))
+		assert.False(t, isToolError(toolResult))
+		var out result.FetchResult
+		require.NoError(t, json.Unmarshal([]byte(resultText(toolResult)), &out))
 		assert.False(t, out.IsArchive)
 	})
 
@@ -810,16 +811,16 @@ func TestHandleFetchFiling(t *testing.T) {
 		srv := New(svc, fc)
 
 		// Act
-		result, err := callTool(srv.handleFetchFiling, map[string]any{
+		toolResult, err := callTool(srv.handleFetchFiling, map[string]any{
 			"ch_number":   "00445790",
 			"document_id": testDocumentID,
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
-		var out fetchResult
-		require.NoError(t, json.Unmarshal([]byte(resultText(result)), &out))
+		assert.False(t, isToolError(toolResult))
+		var out result.FetchResult
+		require.NoError(t, json.Unmarshal([]byte(resultText(toolResult)), &out))
 		assert.True(t, out.IsArchive)
 		assert.True(t, out.Truncated)
 		assert.Equal(t, 21, out.TotalInArchive)
@@ -845,14 +846,14 @@ func TestHandleFetchFiling(t *testing.T) {
 		srv := New(svc, fc)
 
 		// Act
-		result, err := callTool(srv.handleFetchFiling, map[string]any{
+		toolResult, err := callTool(srv.handleFetchFiling, map[string]any{
 			"ch_number":   "00445790",
 			"document_id": testDocumentID,
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 }
 
@@ -900,16 +901,16 @@ func TestHandleGetLatest(t *testing.T) {
 		srv := New(svc, fc)
 
 		// Act
-		result, err := callTool(srv.handleGetLatest, map[string]any{
+		toolResult, err := callTool(srv.handleGetLatest, map[string]any{
 			"ch_number": "00445790",
 			"category":  "accounts",
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
-		var out fetchResult
-		require.NoError(t, json.Unmarshal([]byte(resultText(result)), &out))
+		assert.False(t, isToolError(toolResult))
+		var out result.FetchResult
+		require.NoError(t, json.Unmarshal([]byte(resultText(toolResult)), &out))
 		assert.Equal(t, testDocumentID, out.DocumentID)
 	})
 
@@ -926,14 +927,14 @@ func TestHandleGetLatest(t *testing.T) {
 		srv := newTestServer(svc)
 
 		// Act
-		result, err := callTool(srv.handleGetLatest, map[string]any{
+		toolResult, err := callTool(srv.handleGetLatest, map[string]any{
 			"ch_number": "00445790",
 			"category":  "accounts",
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error when the latest filing has no downloadable document", func(t *testing.T) {
@@ -959,14 +960,14 @@ func TestHandleGetLatest(t *testing.T) {
 		srv := newTestServer(svc)
 
 		// Act
-		result, err := callTool(srv.handleGetLatest, map[string]any{
+		toolResult, err := callTool(srv.handleGetLatest, map[string]any{
 			"ch_number": "00445790",
 			"category":  "accounts",
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error when ch_number is missing", func(t *testing.T) {
@@ -976,11 +977,11 @@ func TestHandleGetLatest(t *testing.T) {
 		srv := newTestServer(&mockCHService{})
 
 		// Act
-		result, err := callTool(srv.handleGetLatest, map[string]any{"category": "accounts"})
+		toolResult, err := callTool(srv.handleGetLatest, map[string]any{"category": "accounts"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error when category is missing", func(t *testing.T) {
@@ -990,11 +991,11 @@ func TestHandleGetLatest(t *testing.T) {
 		srv := newTestServer(&mockCHService{})
 
 		// Act
-		result, err := callTool(srv.handleGetLatest, map[string]any{"ch_number": "00445790"})
+		toolResult, err := callTool(srv.handleGetLatest, map[string]any{"ch_number": "00445790"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error for an invalid ch_number", func(t *testing.T) {
@@ -1004,14 +1005,14 @@ func TestHandleGetLatest(t *testing.T) {
 		srv := newTestServer(&mockCHService{})
 
 		// Act
-		result, err := callTool(srv.handleGetLatest, map[string]any{
+		toolResult, err := callTool(srv.handleGetLatest, map[string]any{
 			"ch_number": "../../etc",
 			"category":  "accounts",
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 }
 
@@ -1028,13 +1029,13 @@ func TestHandleClearCache(t *testing.T) {
 		srv := New(&mockCHService{}, fc)
 
 		// Act
-		result, err := callTool(srv.handleClearCache, map[string]any{})
+		toolResult, err := callTool(srv.handleClearCache, map[string]any{})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
-		var out clearCacheResult
-		require.NoError(t, json.Unmarshal([]byte(resultText(result)), &out))
+		assert.False(t, isToolError(toolResult))
+		var out result.ClearCacheResult
+		require.NoError(t, json.Unmarshal([]byte(resultText(toolResult)), &out))
 		assert.EqualValues(t, 2, out.DeletedFiles)
 		assert.EqualValues(t, 500, out.FreedBytes)
 		assert.EqualValues(t, 2, out.DBRecordsRemoved)
@@ -1050,13 +1051,13 @@ func TestHandleClearCache(t *testing.T) {
 		srv := New(&mockCHService{}, fc)
 
 		// Act
-		result, err := callTool(srv.handleClearCache, map[string]any{"ch_number": "00445790"})
+		toolResult, err := callTool(srv.handleClearCache, map[string]any{"ch_number": "00445790"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
-		var out clearCacheResult
-		require.NoError(t, json.Unmarshal([]byte(resultText(result)), &out))
+		assert.False(t, isToolError(toolResult))
+		var out result.ClearCacheResult
+		require.NoError(t, json.Unmarshal([]byte(resultText(toolResult)), &out))
 		assert.EqualValues(t, 1, out.DeletedFiles)
 	})
 
@@ -1070,13 +1071,13 @@ func TestHandleClearCache(t *testing.T) {
 		srv := New(&mockCHService{}, fc)
 
 		// Act
-		result, err := callTool(srv.handleClearCache, map[string]any{})
+		toolResult, err := callTool(srv.handleClearCache, map[string]any{})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
-		var out clearCacheResult
-		require.NoError(t, json.Unmarshal([]byte(resultText(result)), &out))
+		assert.False(t, isToolError(toolResult))
+		var out result.ClearCacheResult
+		require.NoError(t, json.Unmarshal([]byte(resultText(toolResult)), &out))
 		assert.EqualValues(t, 0, out.DeletedFiles)
 		assert.Equal(t, int64(0), out.FreedBytes)
 	})
@@ -1104,11 +1105,11 @@ func TestHandleClearCache(t *testing.T) {
 		srv := newTestServer(&mockCHService{})
 
 		// Act
-		result, err := callTool(srv.handleClearCache, map[string]any{"ch_number": "../../etc"})
+		toolResult, err := callTool(srv.handleClearCache, map[string]any{"ch_number": "../../etc"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 }
 
@@ -1148,13 +1149,13 @@ func TestHandleListFilingsFiltering(t *testing.T) {
 		srv := New(svc, fc)
 
 		// Act
-		result, err := callTool(srv.handleListFilings, map[string]any{"ch_number": "00445790"})
+		toolResult, err := callTool(srv.handleListFilings, map[string]any{"ch_number": "00445790"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
-		var out []filingResult
-		require.NoError(t, json.Unmarshal([]byte(resultText(result)), &out))
+		assert.False(t, isToolError(toolResult))
+		var out []result.FilingResult
+		require.NoError(t, json.Unmarshal([]byte(resultText(toolResult)), &out))
 		require.Len(t, out, 1)
 		assert.Equal(t, withDocID, out[0].DocumentID)
 	})
@@ -1195,19 +1196,19 @@ func TestHandleExtractXBRLFacts(t *testing.T) {
 		srv := New(&mockCHService{}, filingCache)
 
 		// Act
-		result, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": filePath})
+		toolResult, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": filePath})
 
 		// Assert
 		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.False(t, result.IsError, "unexpected tool error: %v", result.Content)
+		require.NotNil(t, toolResult)
+		assert.False(t, toolResult.IsError, "unexpected tool error: %v", toolResult.Content)
 		var out struct {
 			Facts     []map[string]any `json:"facts"`
 			Count     int              `json:"count"`
 			Truncated bool             `json:"truncated"`
 		}
-		require.NotEmpty(t, result.Content)
-		require.NoError(t, json.Unmarshal([]byte(result.Content[0].(mcp.TextContent).Text), &out))
+		require.NotEmpty(t, toolResult.Content)
+		require.NoError(t, json.Unmarshal([]byte(toolResult.Content[0].(mcp.TextContent).Text), &out))
 		require.Len(t, out.Facts, 1)
 		assert.Equal(t, "Revenue", out.Facts[0]["name"])
 		assert.Equal(t, 1, out.Count)
@@ -1227,13 +1228,13 @@ func TestHandleExtractXBRLFacts(t *testing.T) {
 		srv := New(&mockCHService{}, filingCache)
 
 		// Act
-		result, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": outsidePath})
+		toolResult, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": outsidePath})
 
 		// Assert
 		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.True(t, result.IsError)
-		assert.Contains(t, result.Content[0].(mcp.TextContent).Text, "not within the cache directory")
+		require.NotNil(t, toolResult)
+		assert.True(t, toolResult.IsError)
+		assert.Contains(t, toolResult.Content[0].(mcp.TextContent).Text, "not within the cache directory")
 	})
 
 	t.Run("should return error when path resolves via symlink to outside cache directory", func(t *testing.T) {
@@ -1247,13 +1248,13 @@ func TestHandleExtractXBRLFacts(t *testing.T) {
 		srv := New(&mockCHService{}, filingCache)
 
 		// Act
-		result, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": linkPath})
+		toolResult, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": linkPath})
 
 		// Assert
 		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.True(t, result.IsError)
-		assert.Contains(t, result.Content[0].(mcp.TextContent).Text, "not within the cache directory")
+		require.NotNil(t, toolResult)
+		assert.True(t, toolResult.IsError)
+		assert.Contains(t, toolResult.Content[0].(mcp.TextContent).Text, "not within the cache directory")
 	})
 
 	t.Run("should return error for non-.xhtml extension", func(t *testing.T) {
@@ -1264,12 +1265,12 @@ func TestHandleExtractXBRLFacts(t *testing.T) {
 		srv := New(&mockCHService{}, filingCache)
 
 		// Act
-		result, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": "/some/path/report.pdf"})
+		toolResult, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": "/some/path/report.pdf"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, result.IsError)
-		assert.Contains(t, result.Content[0].(mcp.TextContent).Text, ".xhtml or .html")
+		assert.True(t, toolResult.IsError)
+		assert.Contains(t, toolResult.Content[0].(mcp.TextContent).Text, ".xhtml or .html")
 	})
 
 	t.Run("should return error when local_path is missing", func(t *testing.T) {
@@ -1280,12 +1281,12 @@ func TestHandleExtractXBRLFacts(t *testing.T) {
 		srv := New(&mockCHService{}, filingCache)
 
 		// Act
-		result, err := callTool(srv.handleExtractXBRLFacts, map[string]any{})
+		toolResult, err := callTool(srv.handleExtractXBRLFacts, map[string]any{})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, result.IsError)
-		assert.Contains(t, result.Content[0].(mcp.TextContent).Text, "local_path is required")
+		assert.True(t, toolResult.IsError)
+		assert.Contains(t, toolResult.Content[0].(mcp.TextContent).Text, "local_path is required")
 	})
 
 	t.Run("should include render_type native_ixbrl for a plain iXBRL document", func(t *testing.T) {
@@ -1308,17 +1309,17 @@ func TestHandleExtractXBRLFacts(t *testing.T) {
 		srv := New(&mockCHService{}, filingCache)
 
 		// Act
-		result, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": filePath})
+		toolResult, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": filePath})
 
 		// Assert
 		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.False(t, result.IsError)
+		require.NotNil(t, toolResult)
+		assert.False(t, toolResult.IsError)
 		var out struct {
 			RenderType string   `json:"render_type"`
 			Warnings   []string `json:"warnings"`
 		}
-		require.NoError(t, json.Unmarshal([]byte(result.Content[0].(mcp.TextContent).Text), &out))
+		require.NoError(t, json.Unmarshal([]byte(toolResult.Content[0].(mcp.TextContent).Text), &out))
 		assert.Equal(t, "native_ixbrl", out.RenderType)
 		assert.Empty(t, out.Warnings)
 	})
@@ -1345,17 +1346,17 @@ func TestHandleExtractXBRLFacts(t *testing.T) {
 		srv := New(&mockCHService{}, filingCache)
 
 		// Act
-		result, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": filePath})
+		toolResult, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": filePath})
 
 		// Assert
 		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.False(t, result.IsError)
+		require.NotNil(t, toolResult)
+		assert.False(t, toolResult.IsError)
 		var out struct {
 			RenderType string   `json:"render_type"`
 			Warnings   []string `json:"warnings"`
 		}
-		require.NoError(t, json.Unmarshal([]byte(result.Content[0].(mcp.TextContent).Text), &out))
+		require.NoError(t, json.Unmarshal([]byte(toolResult.Content[0].(mcp.TextContent).Text), &out))
 		assert.Equal(t, "pdf_rendered", out.RenderType)
 		require.Len(t, out.Warnings, 1)
 		assert.Contains(t, out.Warnings[0], "narrative text")
@@ -1388,17 +1389,17 @@ func TestHandleExtractXBRLFacts(t *testing.T) {
 		srv := New(&mockCHService{}, filingCache)
 
 		// Act
-		result, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": filePath})
+		toolResult, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": filePath})
 
 		// Assert
 		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.False(t, result.IsError)
+		require.NotNil(t, toolResult)
+		assert.False(t, toolResult.IsError)
 		var out struct {
 			RenderType string   `json:"render_type"`
 			Warnings   []string `json:"warnings"`
 		}
-		require.NoError(t, json.Unmarshal([]byte(result.Content[0].(mcp.TextContent).Text), &out))
+		require.NoError(t, json.Unmarshal([]byte(toolResult.Content[0].(mcp.TextContent).Text), &out))
 		assert.Equal(t, "pdf_rendered", out.RenderType)
 		require.Len(t, out.Warnings, 1)
 		assert.Contains(t, out.Warnings[0], "narrative text")
@@ -1433,17 +1434,17 @@ func TestHandleExtractXBRLFacts(t *testing.T) {
 		srv := New(&mockCHService{}, filingCache)
 
 		// Act
-		result, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": filePath})
+		toolResult, err := callTool(srv.handleExtractXBRLFacts, map[string]any{"local_path": filePath})
 
 		// Assert
 		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.False(t, result.IsError)
+		require.NotNil(t, toolResult)
+		assert.False(t, toolResult.IsError)
 		var out struct {
 			RenderType string   `json:"render_type"`
 			Warnings   []string `json:"warnings"`
 		}
-		require.NoError(t, json.Unmarshal([]byte(result.Content[0].(mcp.TextContent).Text), &out))
+		require.NoError(t, json.Unmarshal([]byte(toolResult.Content[0].(mcp.TextContent).Text), &out))
 		assert.Equal(t, "pdf_rendered", out.RenderType)
 		require.Len(t, out.Warnings, 1)
 		assert.Contains(t, out.Warnings[0], "no alternative formats are available")
@@ -1473,16 +1474,16 @@ func TestHandleListZipContents(t *testing.T) {
 		srv := New(&mockCHService{}, fc)
 
 		// Act
-		result, err := callTool(srv.handleListZipContents, map[string]any{
+		toolResult, err := callTool(srv.handleListZipContents, map[string]any{
 			"ch_number":   "00445790",
 			"document_id": testDocumentID,
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.False(t, isToolError(result))
-		var out listZipContentsResult
-		require.NoError(t, json.Unmarshal([]byte(resultText(result)), &out))
+		assert.False(t, isToolError(toolResult))
+		var out result.ListZipContentsResult
+		require.NoError(t, json.Unmarshal([]byte(resultText(toolResult)), &out))
 		require.Len(t, out.Entries, 2)
 		assert.True(t, out.Entries[0].IsPrimary)
 		assert.Equal(t, "report.xhtml", out.Entries[0].Filename)
@@ -1506,15 +1507,15 @@ func TestHandleListZipContents(t *testing.T) {
 		srv := New(&mockCHService{}, fc)
 
 		// Act
-		result, err := callTool(srv.handleListZipContents, map[string]any{
+		toolResult, err := callTool(srv.handleListZipContents, map[string]any{
 			"ch_number":   "00445790",
 			"document_id": testDocumentID,
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
-		assert.Contains(t, resultText(result), "not cached")
+		assert.True(t, isToolError(toolResult))
+		assert.Contains(t, resultText(toolResult), "not cached")
 	})
 
 	t.Run("should return a tool error when document_id is unknown", func(t *testing.T) {
@@ -1527,15 +1528,15 @@ func TestHandleListZipContents(t *testing.T) {
 		srv := New(&mockCHService{}, fc)
 
 		// Act
-		result, err := callTool(srv.handleListZipContents, map[string]any{
+		toolResult, err := callTool(srv.handleListZipContents, map[string]any{
 			"ch_number":   "00445790",
 			"document_id": "unknown-id",
 		})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
-		assert.Contains(t, resultText(result), "list_filings")
+		assert.True(t, isToolError(toolResult))
+		assert.Contains(t, resultText(toolResult), "list_filings")
 	})
 
 	t.Run("should return a tool error for missing ch_number", func(t *testing.T) {
@@ -1545,11 +1546,11 @@ func TestHandleListZipContents(t *testing.T) {
 		srv := New(&mockCHService{}, &mockFilingCache{})
 
 		// Act
-		result, err := callTool(srv.handleListZipContents, map[string]any{"document_id": testDocumentID})
+		toolResult, err := callTool(srv.handleListZipContents, map[string]any{"document_id": testDocumentID})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should return a tool error for missing document_id", func(t *testing.T) {
@@ -1559,11 +1560,11 @@ func TestHandleListZipContents(t *testing.T) {
 		srv := New(&mockCHService{}, &mockFilingCache{})
 
 		// Act
-		result, err := callTool(srv.handleListZipContents, map[string]any{"ch_number": "00445790"})
+		toolResult, err := callTool(srv.handleListZipContents, map[string]any{"ch_number": "00445790"})
 
 		// Assert
 		require.NoError(t, err)
-		assert.True(t, isToolError(result))
+		assert.True(t, isToolError(toolResult))
 	})
 
 	t.Run("should propagate cache errors", func(t *testing.T) {
