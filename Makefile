@@ -1,7 +1,7 @@
 .PHONY: test lint vuln local-release release-dry-run
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//')
-LDFLAGS := -X github.com/riftwerx/company-research/internal/mcp.Version=$(VERSION)
+LDFLAGS := -X github.com/riftwerx/company-research/internal/version.Version=$(VERSION)
 
 test:
 	go test -race ./...

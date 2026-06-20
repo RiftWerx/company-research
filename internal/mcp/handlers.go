@@ -16,6 +16,7 @@ import (
 	"github.com/riftwerx/company-research/internal/archive"
 	"github.com/riftwerx/company-research/internal/cache"
 	"github.com/riftwerx/company-research/internal/companyhouse"
+	"github.com/riftwerx/company-research/internal/result"
 	"github.com/riftwerx/company-research/internal/xbrl"
 )
 
@@ -46,62 +47,6 @@ const defaultSearchLimit = 10
 // defaultFilingsLimit is the maximum number of filings returned when the caller does not specify a limit.
 const defaultFilingsLimit = 20
 
-// searchResult is the minimal per-company response for search_company.
-type searchResult struct {
-	CHNumber string `json:"ch_number"`
-	Name     string `json:"name"`
-	Status   string `json:"status"`
-	Type     string `json:"type"`
-	Locality string `json:"locality,omitempty"`
-}
-
-// profileAddress is the address sub-object in get_company_profile responses.
-type profileAddress struct {
-	Line1    string `json:"line1,omitempty"`
-	Line2    string `json:"line2,omitempty"`
-	Locality string `json:"locality,omitempty"`
-	Postcode string `json:"postcode,omitempty"`
-	Country  string `json:"country,omitempty"`
-}
-
-// profileResult is the minimal response for get_company_profile.
-type profileResult struct {
-	CHNumber       string         `json:"ch_number"`
-	Name           string         `json:"name"`
-	Status         string         `json:"status"`
-	Type           string         `json:"type"`
-	DateOfCreation string         `json:"date_of_creation,omitempty"`
-	SICCodes       []string       `json:"sic_codes"`
-	Address        profileAddress `json:"address"`
-}
-
-// filingResult is the minimal per-filing response for list_filings.
-type filingResult struct {
-	DocumentID  string `json:"document_id"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
-	Date        string `json:"date"` // YYYY-MM-DD
-}
-
-// fetchResult is the response for fetch_filing and get_latest.
-type fetchResult struct {
-	DocumentID     string `json:"document_id"`
-	LocalPath      string `json:"local_path"`
-	ContentType    string `json:"content_type"`
-	FileSizeBytes  int64  `json:"file_size_bytes"`
-	Source         string `json:"source"`
-	IsArchive      bool   `json:"is_archive,omitempty"`
-	TotalInArchive int    `json:"total_in_archive,omitempty"`
-	Truncated      bool   `json:"truncated,omitempty"`
-}
-
-// clearCacheResult is the response for clear_cache.
-type clearCacheResult struct {
-	DeletedFiles     int64 `json:"deleted_files"`
-	FreedBytes       int64 `json:"freed_bytes"`
-	DBRecordsRemoved int64 `json:"db_records_removed"`
-}
-
 // handleSearchCompany implements the search_company tool.
 func (s *Server) handleSearchCompany(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, err := req.RequireString("query")
@@ -115,9 +60,9 @@ func (s *Server) handleSearchCompany(ctx context.Context, req mcp.CallToolReques
 		return toolResultForCHError(err, "search companies")
 	}
 
-	out := make([]searchResult, len(results))
+	out := make([]result.SearchResult, len(results))
 	for i, r := range results {
-		out[i] = searchResult{
+		out[i] = result.SearchResult{
 			CHNumber: r.CompanyNumber,
 			Name:     r.Title,
 			Status:   r.CompanyStatus,
@@ -147,14 +92,14 @@ func (s *Server) handleGetCompanyProfile(ctx context.Context, req mcp.CallToolRe
 	if sicCodes == nil {
 		sicCodes = []string{}
 	}
-	out := profileResult{
+	out := result.ProfileResult{
 		CHNumber:       profile.CompanyNumber,
 		Name:           profile.CompanyName,
 		Status:         profile.CompanyStatus,
 		Type:           profile.CompanyType,
 		DateOfCreation: profile.DateOfCreation,
 		SICCodes:       sicCodes,
-		Address: profileAddress{
+		Address: result.ProfileAddress{
 			Line1:    profile.RegisteredOffice.AddressLine1,
 			Line2:    profile.RegisteredOffice.AddressLine2,
 			Locality: profile.RegisteredOffice.Locality,
@@ -189,7 +134,7 @@ func (s *Server) handleListFilings(ctx context.Context, req mcp.CallToolRequest)
 
 	// Omit filings that have no downloadable document — they cannot be used with
 	// fetch_filing and would only produce confusing errors if the LLM tried.
-	out := make([]filingResult, 0, len(filings))
+	out := make([]result.FilingResult, 0, len(filings))
 	for _, f := range filings {
 		if f.DocumentURL == "" {
 			continue
@@ -202,7 +147,7 @@ func (s *Server) handleListFilings(ctx context.Context, req mcp.CallToolRequest)
 		if !f.Date.IsZero() {
 			date = f.Date.Format("2006-01-02")
 		}
-		out = append(out, filingResult{
+		out = append(out, result.FilingResult{
 			DocumentID:  docID,
 			Type:        f.Type,
 			Description: f.Description,
@@ -294,7 +239,7 @@ func (s *Server) fetchDocument(ctx context.Context, chNumber, documentURL, docum
 		return nil, fmt.Errorf("check cache: %w", err)
 	}
 	if entry != nil {
-		res := fetchResult{
+		res := result.FetchResult{
 			DocumentID:    documentID,
 			LocalPath:     entry.LocalPath,
 			ContentType:   entry.ContentType,
@@ -355,7 +300,7 @@ func (s *Server) fetchDocument(ctx context.Context, chNumber, documentURL, docum
 			return nil, fmt.Errorf("cache zip entries: %w", cacheErr)
 		}
 		primary := zipEntries[0] // ExtractAll guarantees primary is first
-		return toolResultJSON(fetchResult{
+		return toolResultJSON(result.FetchResult{
 			DocumentID:     documentID,
 			LocalPath:      primaryPath,
 			ContentType:    primary.ContentType,
@@ -372,7 +317,7 @@ func (s *Server) fetchDocument(ctx context.Context, chNumber, documentURL, docum
 		return nil, fmt.Errorf("cache document: %w", err)
 	}
 
-	return toolResultJSON(fetchResult{
+	return toolResultJSON(result.FetchResult{
 		DocumentID:    documentID,
 		LocalPath:     localPath,
 		ContentType:   doc.ContentType,
@@ -393,27 +338,11 @@ func (s *Server) handleClearCache(ctx context.Context, req mcp.CallToolRequest) 
 		return nil, fmt.Errorf("clear cache: %w", err)
 	}
 
-	return toolResultJSON(clearCacheResult{
+	return toolResultJSON(result.ClearCacheResult{
 		DeletedFiles:     cleared.DeletedFiles,
 		FreedBytes:       cleared.FreedBytes,
 		DBRecordsRemoved: cleared.DBRecords,
 	})
-}
-
-// zipEntryResult is a single entry in the list_zip_contents response.
-type zipEntryResult struct {
-	Filename      string `json:"filename"`
-	LocalPath     string `json:"local_path"`
-	ContentType   string `json:"content_type"`
-	FileSizeBytes int64  `json:"file_size_bytes"`
-	IsPrimary     bool   `json:"is_primary"`
-}
-
-// listZipContentsResult is the response for list_zip_contents.
-type listZipContentsResult struct {
-	Entries        []zipEntryResult `json:"entries"`
-	TotalInArchive int              `json:"total_in_archive,omitempty"`
-	Truncated      bool             `json:"truncated,omitempty"`
 }
 
 // handleListZipContents implements the list_zip_contents tool.
@@ -453,9 +382,9 @@ func (s *Server) handleListZipContents(ctx context.Context, req mcp.CallToolRequ
 		return toolError("filing is not cached or was not extracted from a zip archive; call fetch_filing first")
 	}
 
-	entries := make([]zipEntryResult, len(records))
+	entries := make([]result.ZipEntryResult, len(records))
 	for i, r := range records {
-		entries[i] = zipEntryResult{
+		entries[i] = result.ZipEntryResult{
 			Filename:      r.Filename,
 			LocalPath:     r.LocalPath,
 			ContentType:   r.ContentType,
@@ -463,7 +392,7 @@ func (s *Server) handleListZipContents(ctx context.Context, req mcp.CallToolRequ
 			IsPrimary:     r.IsPrimary,
 		}
 	}
-	return toolResultJSON(listZipContentsResult{
+	return toolResultJSON(result.ListZipContentsResult{
 		Entries:        entries,
 		TotalInArchive: totalInArchive,
 		Truncated:      totalInArchive > len(records),
@@ -504,7 +433,7 @@ func (s *Server) handleExtractXBRLFacts(ctx context.Context, req mcp.CallToolReq
 	if parseErr != nil {
 		return toolError(fmt.Sprintf("parse iXBRL: %s", parseErr))
 	}
-	res := xbrlFactsResult{
+	res := result.XBRLFactsResult{
 		Facts:      parsed.Facts,
 		Count:      len(parsed.Facts),
 		Truncated:  parsed.Truncated,
@@ -541,19 +470,6 @@ func buildPDFRenderedWarning(ctx context.Context, c FilingCache, realPath string
 		"narrative text is not reliably accessible in PDF-rendered iXBRL; %d alternative file(s) are available in the source archive: %s — use list_zip_contents with ch_number %q and the same document_id used to fetch this filing",
 		len(alts), strings.Join(alts, ", "), chNumber,
 	)
-}
-
-// xbrlFactsResult is the response envelope for extract_xbrl_facts.
-// Truncated is true when the document contained more facts than the MaxFacts cap;
-// callers should use name_prefix to narrow the query when this occurs.
-// RenderType is "native_ixbrl" or "pdf_rendered"; Warnings is non-empty when
-// narrative text is not reliably accessible.
-type xbrlFactsResult struct {
-	Facts      []xbrl.Fact `json:"facts"`
-	Count      int         `json:"count"`
-	Truncated  bool        `json:"truncated"`
-	RenderType string      `json:"render_type"`
-	Warnings   []string    `json:"warnings,omitempty"`
 }
 
 // toolResultForCHError maps CH sentinel errors to tool error results.
