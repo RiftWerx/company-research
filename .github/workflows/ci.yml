@@ -25,7 +25,7 @@ jobs:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.11.4
+          version: v2.13.2
 
   vuln:
     runs-on: ubuntu-latest
