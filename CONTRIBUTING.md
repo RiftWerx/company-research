@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go 1.26+
+- Go 1.27+
 - [`golangci-lint`](https://golangci-lint.run/welcome/install/) (for `make lint`)
 - [`govulncheck`](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) (for `make vuln`)
 
