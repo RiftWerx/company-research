@@ -5,7 +5,7 @@ go 1.27.1
 require (
 	github.com/alecthomas/kong v1.16.1
 	github.com/google/uuid v1.6.0
-	github.com/mark3labs/mcp-go v0.57.0
+	github.com/mark3labs/mcp-go v1.1.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/net v0.57.0
 	golang.org/x/time v0.15.0
