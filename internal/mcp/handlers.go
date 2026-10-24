@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
@@ -26,6 +27,9 @@ type CompanyHouseService interface {
 	GetCompanyProfile(ctx context.Context, chNumber string) (*companyhouse.CompanyProfile, error)
 	GetFilingHistory(ctx context.Context, chNumber string, opts companyhouse.ListFilingsOptions) ([]companyhouse.Filing, error)
 	GetDocument(ctx context.Context, documentURL string) (*companyhouse.Document, error)
+	GetCharges(ctx context.Context, chNumber string) ([]companyhouse.Charge, error)
+	GetPersonsWithSignificantControl(ctx context.Context, chNumber string) ([]companyhouse.PSC, error)
+	GetInsolvencyCases(ctx context.Context, chNumber string) ([]companyhouse.InsolvencyCase, error)
 }
 
 // FilingCache is the subset of cache.Cache that MCP handlers require.
@@ -46,6 +50,21 @@ const defaultSearchLimit = 10
 
 // defaultFilingsLimit is the maximum number of filings returned when the caller does not specify a limit.
 const defaultFilingsLimit = 20
+
+// briefCandidateLimit is the max search candidates fetched/shown when get_company_brief
+// must disambiguate a company_name that matched more than one company.
+const briefCandidateLimit = 5
+
+// defaultBriefRecentLimit is the default cap on get_company_brief's recent_filings list.
+const defaultBriefRecentLimit = 20
+
+// maxBriefRecentLimit is the maximum allowed value for get_company_brief's limit param.
+const maxBriefRecentLimit = 40
+
+// briefRecentFetchPadding is added to limit when fetching recent filings, to absorb the
+// up-to-2 entries excluded because they duplicate latest_accounts/latest_confirmation_statement,
+// so the final recent_filings list still reaches limit where the upstream history allows it.
+const briefRecentFetchPadding = 2
 
 // handleSearchCompany implements the search_company tool.
 func (s *Server) handleSearchCompany(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -143,18 +162,22 @@ func (s *Server) handleListFilings(ctx context.Context, req mcp.CallToolRequest)
 		if refErr != nil {
 			return nil, fmt.Errorf("store filing ref: %w", refErr)
 		}
-		date := ""
-		if !f.Date.IsZero() {
-			date = f.Date.Format("2006-01-02")
-		}
 		out = append(out, result.FilingResult{
 			DocumentID:  docID,
 			Type:        f.Type,
 			Description: f.Description,
-			Date:        date,
+			Date:        formatFilingDate(f.Date),
 		})
 	}
 	return toolResultJSON(out)
+}
+
+// formatFilingDate renders a filing date as YYYY-MM-DD, or "" if unset.
+func formatFilingDate(d time.Time) string {
+	if d.IsZero() {
+		return ""
+	}
+	return d.Format("2006-01-02")
 }
 
 // handleFetchFiling implements the fetch_filing tool.
@@ -213,6 +236,212 @@ func (s *Server) handleGetLatest(ctx context.Context, req mcp.CallToolRequest) (
 		return nil, fmt.Errorf("store filing ref: %w", refErr)
 	}
 	return s.fetchDocument(ctx, chNumber, filings[0].DocumentURL, documentID)
+}
+
+// handleGetCompanyBrief implements the get_company_brief tool.
+func (s *Server) handleGetCompanyBrief(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	companyName := req.GetString("company_name", "")
+	chNumber := req.GetString("ch_number", "")
+	if companyName == "" && chNumber == "" {
+		return toolError("company_name or ch_number is required")
+	}
+	limit := req.GetInt("limit", defaultBriefRecentLimit)
+	switch {
+	case limit <= 0:
+		limit = defaultBriefRecentLimit
+	case limit > maxBriefRecentLimit:
+		limit = maxBriefRecentLimit
+	}
+
+	if chNumber != "" {
+		if !companyhouse.ValidateCHNumber(chNumber) {
+			return toolError("ch_number contains invalid characters")
+		}
+	} else {
+		candidates, err := s.chSvc.SearchCompanies(ctx, companyName, briefCandidateLimit)
+		if err != nil {
+			return toolResultForCHError(err, "search companies")
+		}
+		switch len(candidates) {
+		case 0:
+			return toolError(fmt.Sprintf("no company found matching %q", companyName))
+		case 1:
+			chNumber = candidates[0].CompanyNumber
+		default:
+			return toolError(formatBriefCandidates(companyName, candidates))
+		}
+		if !companyhouse.ValidateCHNumber(chNumber) {
+			return toolError("ch_number contains invalid characters")
+		}
+	}
+
+	profile, err := s.chSvc.GetCompanyProfile(ctx, chNumber)
+	if err != nil {
+		return toolResultForCHError(err, "get company profile")
+	}
+	sicCodes := profile.SICCodes
+	if sicCodes == nil {
+		sicCodes = []string{}
+	}
+	// Filing references must use the same canonical number returned to callers.
+	if !companyhouse.ValidateCHNumber(profile.CompanyNumber) {
+		return nil, fmt.Errorf("get company brief: profile contains an invalid company number")
+	}
+	chNumber = profile.CompanyNumber
+	out := result.CompanyBriefResult{
+		Profile: result.ProfileResult{
+			CHNumber:       profile.CompanyNumber,
+			Name:           profile.CompanyName,
+			Status:         profile.CompanyStatus,
+			Type:           profile.CompanyType,
+			DateOfCreation: profile.DateOfCreation,
+			SICCodes:       sicCodes,
+			Address: result.ProfileAddress{
+				Line1:    profile.RegisteredOffice.AddressLine1,
+				Line2:    profile.RegisteredOffice.AddressLine2,
+				Locality: profile.RegisteredOffice.Locality,
+				Postcode: profile.RegisteredOffice.PostalCode,
+				Country:  profile.RegisteredOffice.Country,
+			},
+		},
+	}
+
+	var latestAccountsTxID, latestConfirmationTxID string
+
+	accounts, err := s.chSvc.GetFilingHistory(ctx, chNumber, companyhouse.ListFilingsOptions{
+		Category:     companyhouse.CategoryAccounts,
+		ItemsPerPage: 1,
+	})
+	if err != nil {
+		return toolResultForCHError(err, "list filings")
+	}
+	if len(accounts) > 0 && accounts[0].DocumentURL != "" {
+		docID, refErr := s.cache.StoreFilingRef(ctx, chNumber, accounts[0].TransactionID, accounts[0].DocumentURL)
+		if refErr != nil {
+			return nil, fmt.Errorf("store filing ref: %w", refErr)
+		}
+		out.LatestAccounts = &result.FilingResult{
+			DocumentID:  docID,
+			Type:        accounts[0].Type,
+			Description: accounts[0].Description,
+			Date:        formatFilingDate(accounts[0].Date),
+		}
+		latestAccountsTxID = accounts[0].TransactionID
+	}
+
+	confirmation, err := s.chSvc.GetFilingHistory(ctx, chNumber, companyhouse.ListFilingsOptions{
+		Category:     companyhouse.CategoryConfirmationStatement,
+		ItemsPerPage: 1,
+	})
+	if err != nil {
+		return toolResultForCHError(err, "list filings")
+	}
+	if len(confirmation) > 0 && confirmation[0].DocumentURL != "" {
+		docID, refErr := s.cache.StoreFilingRef(ctx, chNumber, confirmation[0].TransactionID, confirmation[0].DocumentURL)
+		if refErr != nil {
+			return nil, fmt.Errorf("store filing ref: %w", refErr)
+		}
+		out.LatestConfirmationStatement = &result.FilingResult{
+			DocumentID:  docID,
+			Type:        confirmation[0].Type,
+			Description: confirmation[0].Description,
+			Date:        formatFilingDate(confirmation[0].Date),
+		}
+		latestConfirmationTxID = confirmation[0].TransactionID
+	}
+
+	charges, err := s.chSvc.GetCharges(ctx, chNumber)
+	if err != nil && !errors.Is(err, companyhouse.ErrNotFound) {
+		return toolResultForCHError(err, "get charges")
+	}
+	for _, c := range charges {
+		if c.Status != companyhouse.ChargeStatusOutstanding && c.Status != companyhouse.ChargeStatusPartSatisfied {
+			continue
+		}
+		out.ActiveCharges = append(out.ActiveCharges, result.ChargeResult{
+			Classification: result.ChargeClassificationResult{
+				Description: c.Classification.Description,
+				Type:        c.Classification.Type,
+			},
+			Status:          c.Status,
+			DeliveredOn:     c.DeliveredOn,
+			PersonsEntitled: c.PersonsEntitled,
+		})
+	}
+
+	pscs, err := s.chSvc.GetPersonsWithSignificantControl(ctx, chNumber)
+	if err != nil && !errors.Is(err, companyhouse.ErrNotFound) {
+		return toolResultForCHError(err, "get persons with significant control")
+	}
+	for _, p := range pscs {
+		if p.Ceased || p.CeasedOn != "" {
+			continue
+		}
+		out.ActivePSC = append(out.ActivePSC, result.PSCResult{
+			Name:             p.Name,
+			Kind:             p.Kind,
+			NaturesOfControl: p.NaturesOfControl,
+			NotifiedOn:       p.NotifiedOn,
+		})
+	}
+
+	insolvencyCases, err := s.chSvc.GetInsolvencyCases(ctx, chNumber)
+	if err != nil && !errors.Is(err, companyhouse.ErrNotFound) {
+		return toolResultForCHError(err, "get insolvency cases")
+	}
+	for _, ic := range insolvencyCases {
+		dates := make([]result.InsolvencyDateResult, len(ic.Dates))
+		for i, d := range ic.Dates {
+			dates[i] = result.InsolvencyDateResult{Type: d.Type, Date: d.Date}
+		}
+		out.InsolvencyCases = append(out.InsolvencyCases, result.InsolvencyCaseResult{
+			CaseType: ic.CaseType,
+			Number:   ic.Number,
+			Dates:    dates,
+		})
+	}
+
+	// Fetch more than limit: latest_accounts and latest_confirmation_statement are excluded
+	// below, so an unpadded fetch could return fewer than limit entries even when the
+	// company has more recent filings just outside the unpadded window.
+	recent, err := s.chSvc.GetFilingHistory(ctx, chNumber, companyhouse.ListFilingsOptions{ItemsPerPage: limit + briefRecentFetchPadding})
+	if err != nil {
+		return toolResultForCHError(err, "list filings")
+	}
+	out.RecentFilings = make([]result.FilingResult, 0, limit)
+	for _, f := range recent {
+		if len(out.RecentFilings) >= limit {
+			break
+		}
+		if f.DocumentURL == "" {
+			continue
+		}
+		if f.TransactionID != "" && (f.TransactionID == latestAccountsTxID || f.TransactionID == latestConfirmationTxID) {
+			continue
+		}
+		docID, refErr := s.cache.StoreFilingRef(ctx, chNumber, f.TransactionID, f.DocumentURL)
+		if refErr != nil {
+			return nil, fmt.Errorf("store filing ref: %w", refErr)
+		}
+		out.RecentFilings = append(out.RecentFilings, result.FilingResult{
+			DocumentID:  docID,
+			Type:        f.Type,
+			Description: f.Description,
+			Date:        formatFilingDate(f.Date),
+		})
+	}
+
+	return toolResultJSON(out)
+}
+
+// formatBriefCandidates builds a disambiguation message listing search candidates by
+// ch_number, name, status, and type, instructing the caller to retry with ch_number.
+func formatBriefCandidates(companyName string, candidates []companyhouse.SearchResult) string {
+	lines := make([]string, len(candidates))
+	for i, c := range candidates {
+		lines[i] = fmt.Sprintf("%s: %s (%s, %s)", c.CompanyNumber, c.Title, c.CompanyStatus, c.CompanyType)
+	}
+	return fmt.Sprintf("multiple companies match %q; retry with an explicit ch_number:\n%s", companyName, strings.Join(lines, "\n"))
 }
 
 // fetchDocument retrieves a filing from the cache or downloads it from CH.

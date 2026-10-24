@@ -13,6 +13,8 @@ Call in order: `search_company` → `list_filings` → `fetch_filing` → `extra
 
 `get_latest` shortcut: replaces `list_filings` + `fetch_filing` in one call (most recent filing in a category).
 
+`get_company_brief` shortcut: for "research this company" requests, prefer this as the first call — it resolves by name or `ch_number` and returns profile + latest accounts + latest confirmation statement + active charges + active PSC + insolvency cases recorded by Companies House + recent filings in one call.
+
 ## Key facts
 
 - CH numbers are zero-padded to 8 digits: `00445790` not `445790`

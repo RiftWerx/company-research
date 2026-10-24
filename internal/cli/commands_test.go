@@ -49,6 +49,24 @@ func (m *mockCHSvc) GetDocument(ctx context.Context, url string) (*companyhouse.
 	return doc, args.Error(1)
 }
 
+func (m *mockCHSvc) GetCharges(ctx context.Context, chNumber string) ([]companyhouse.Charge, error) {
+	args := m.Called(ctx, chNumber)
+	charges, _ := args.Get(0).([]companyhouse.Charge)
+	return charges, args.Error(1)
+}
+
+func (m *mockCHSvc) GetPersonsWithSignificantControl(ctx context.Context, chNumber string) ([]companyhouse.PSC, error) {
+	args := m.Called(ctx, chNumber)
+	pscs, _ := args.Get(0).([]companyhouse.PSC)
+	return pscs, args.Error(1)
+}
+
+func (m *mockCHSvc) GetInsolvencyCases(ctx context.Context, chNumber string) ([]companyhouse.InsolvencyCase, error) {
+	args := m.Called(ctx, chNumber)
+	cases, _ := args.Get(0).([]companyhouse.InsolvencyCase)
+	return cases, args.Error(1)
+}
+
 // mockFilingCache is a testify mock for FilingCache.
 type mockFilingCache struct {
 	mock.Mock
@@ -360,6 +378,355 @@ func TestGetLatestCmd(t *testing.T) {
 		svc.On("GetFilingHistory", mock.Anything, "00000001", mock.Anything).Return(nil, companyhouse.ErrNotFound)
 		defer svc.AssertExpectations(t)
 		cmd := &GetLatestCmd{CHNumber: "00000001", Category: "accounts", out: io.Discard}
+
+		// Act
+		err := cmd.Run(context.Background(), svc, &mockFilingCache{})
+
+		// Assert
+		require.Error(t, err)
+	})
+}
+
+func TestGetCompanyBriefCmd(t *testing.T) {
+	t.Parallel()
+
+	const chNumber = "00445790"
+
+	profile := &companyhouse.CompanyProfile{
+		CompanyNumber:  chNumber,
+		CompanyName:    "TESCO PLC",
+		CompanyStatus:  "active",
+		CompanyType:    "plc",
+		SICCodes:       []string{"47110"},
+		DateOfCreation: "1947-11-27",
+		RegisteredOffice: companyhouse.RegisteredAddress{
+			AddressLine1: "Tesco House", AddressLine2: "Shire Park", Locality: "Welwyn Garden City", PostalCode: "AL7 1GA", Country: "England",
+		},
+	}
+	accountsFiling := companyhouse.Filing{
+		TransactionID: "tx-accounts",
+		Type:          "AA",
+		DocumentURL:   "https://document-api.company-information.service.gov.uk/document/accounts",
+		Date:          time.Date(2024, 6, 21, 0, 0, 0, 0, time.UTC),
+	}
+	confirmationFiling := companyhouse.Filing{
+		TransactionID: "tx-confirmation",
+		Type:          "CS01",
+		DocumentURL:   "https://document-api.company-information.service.gov.uk/document/confirmation",
+		Date:          time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
+	}
+
+	t.Run("should return a populated brief for a ch-number", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		svc := &mockCHSvc{}
+		svc.On("GetCompanyProfile", mock.Anything, chNumber).Return(profile, nil)
+		svc.On("GetFilingHistory", mock.Anything, chNumber, companyhouse.ListFilingsOptions{
+			Category: companyhouse.CategoryAccounts, ItemsPerPage: 1,
+		}).Return([]companyhouse.Filing{accountsFiling}, nil)
+		svc.On("GetFilingHistory", mock.Anything, chNumber, companyhouse.ListFilingsOptions{
+			Category: companyhouse.CategoryConfirmationStatement, ItemsPerPage: 1,
+		}).Return([]companyhouse.Filing{confirmationFiling}, nil)
+		svc.On("GetCharges", mock.Anything, chNumber).Return([]companyhouse.Charge{
+			{Classification: companyhouse.ChargeClassification{Description: "Legal charge", Type: "charge-description"}, Status: "outstanding", DeliveredOn: "2009-11-06", PersonsEntitled: []string{"Example Bank PLC"}},
+			{Classification: companyhouse.ChargeClassification{Description: "Old debenture", Type: "charge-description"}, Status: "satisfied"},
+		}, nil)
+		svc.On("GetPersonsWithSignificantControl", mock.Anything, chNumber).Return([]companyhouse.PSC{
+			{Name: "Active Holdco Ltd", Kind: "corporate-entity-person-with-significant-control", NaturesOfControl: []string{"ownership-of-shares-75-to-100-percent"}, NotifiedOn: "2016-04-06"},
+			{Name: "Former Owner", CeasedOn: "2024-01-01"},
+			{Name: "Former Protected PSC", Ceased: true},
+		}, nil)
+		svc.On("GetInsolvencyCases", mock.Anything, chNumber).Return([]companyhouse.InsolvencyCase{
+			{CaseType: "compulsory-liquidation", Number: "1", Dates: []companyhouse.InsolvencyDate{{Type: "petitioned-on", Date: "2018-01-15"}}},
+		}, nil)
+		svc.On("GetFilingHistory", mock.Anything, chNumber, companyhouse.ListFilingsOptions{
+			ItemsPerPage: defaultBriefRecentLimit + briefRecentFetchPadding,
+		}).Return([]companyhouse.Filing{
+			accountsFiling,
+			confirmationFiling,
+			{TransactionID: "tx-recent", Type: "AD01", DocumentURL: "https://document-api.company-information.service.gov.uk/document/recent", Date: time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)},
+		}, nil)
+		defer svc.AssertExpectations(t)
+
+		fc := &mockFilingCache{}
+		fc.On("StoreFilingRef", mock.Anything, chNumber, "tx-accounts", accountsFiling.DocumentURL).Return("doc-accounts", nil)
+		fc.On("StoreFilingRef", mock.Anything, chNumber, "tx-confirmation", confirmationFiling.DocumentURL).Return("doc-confirmation", nil)
+		fc.On("StoreFilingRef", mock.Anything, chNumber, "tx-recent", "https://document-api.company-information.service.gov.uk/document/recent").Return("doc-recent", nil)
+		defer fc.AssertExpectations(t)
+
+		var buf bytes.Buffer
+		cmd := &GetCompanyBriefCmd{CHNumber: chNumber, Limit: 20, out: &buf}
+
+		// Act
+		err := cmd.Run(context.Background(), svc, fc)
+
+		// Assert
+		require.NoError(t, err)
+		var out result.CompanyBriefResult
+		require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+		assert.Equal(t, result.CompanyBriefResult{
+			Profile: result.ProfileResult{
+				CHNumber: chNumber, Name: "TESCO PLC", Status: "active", Type: "plc", DateOfCreation: "1947-11-27", SICCodes: []string{"47110"},
+				Address: result.ProfileAddress{Line1: "Tesco House", Line2: "Shire Park", Locality: "Welwyn Garden City", Postcode: "AL7 1GA", Country: "England"},
+			},
+			LatestAccounts:              &result.FilingResult{DocumentID: "doc-accounts", Type: "AA", Date: "2024-06-21"},
+			LatestConfirmationStatement: &result.FilingResult{DocumentID: "doc-confirmation", Type: "CS01", Date: "2024-01-15"},
+			ActiveCharges:               []result.ChargeResult{{Classification: result.ChargeClassificationResult{Description: "Legal charge", Type: "charge-description"}, Status: "outstanding", DeliveredOn: "2009-11-06", PersonsEntitled: []string{"Example Bank PLC"}}},
+			ActivePSC:                   []result.PSCResult{{Name: "Active Holdco Ltd", Kind: "corporate-entity-person-with-significant-control", NaturesOfControl: []string{"ownership-of-shares-75-to-100-percent"}, NotifiedOn: "2016-04-06"}},
+			InsolvencyCases:             []result.InsolvencyCaseResult{{CaseType: "compulsory-liquidation", Number: "1", Dates: []result.InsolvencyDateResult{{Type: "petitioned-on", Date: "2018-01-15"}}}},
+			RecentFilings:               []result.FilingResult{{DocumentID: "doc-recent", Type: "AD01", Date: "2024-03-01"}},
+		}, out)
+	})
+
+	t.Run("should resolve ch-number via company-name when exactly one search result matches", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		svc := &mockCHSvc{}
+		svc.On("SearchCompanies", mock.Anything, "Tesco", briefCandidateLimit).Return(
+			[]companyhouse.SearchResult{{CompanyNumber: chNumber, Title: "TESCO PLC"}}, nil,
+		)
+		svc.On("GetCompanyProfile", mock.Anything, chNumber).Return(profile, nil)
+		svc.On("GetFilingHistory", mock.Anything, chNumber, mock.Anything).Return([]companyhouse.Filing{}, nil)
+		svc.On("GetCharges", mock.Anything, chNumber).Return(nil, companyhouse.ErrNotFound)
+		svc.On("GetPersonsWithSignificantControl", mock.Anything, chNumber).Return(nil, companyhouse.ErrNotFound)
+		svc.On("GetInsolvencyCases", mock.Anything, chNumber).Return(nil, companyhouse.ErrNotFound)
+		defer svc.AssertExpectations(t)
+		cmd := &GetCompanyBriefCmd{CompanyName: "Tesco", Limit: 20, out: io.Discard}
+
+		// Act
+		err := cmd.Run(context.Background(), svc, &mockFilingCache{})
+
+		// Assert
+		require.NoError(t, err)
+	})
+
+	t.Run("should return an error when the name search finds zero companies", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		svc := &mockCHSvc{}
+		svc.On("SearchCompanies", mock.Anything, "Nonexistent Co", briefCandidateLimit).Return([]companyhouse.SearchResult{}, nil)
+		defer svc.AssertExpectations(t)
+		cmd := &GetCompanyBriefCmd{CompanyName: "Nonexistent Co", Limit: 20, out: io.Discard}
+
+		// Act
+		err := cmd.Run(context.Background(), svc, &mockFilingCache{})
+
+		// Assert
+		require.Error(t, err)
+	})
+
+	t.Run("should return an error listing candidates when the name search is ambiguous", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		svc := &mockCHSvc{}
+		svc.On("SearchCompanies", mock.Anything, "Tesco", briefCandidateLimit).Return(
+			[]companyhouse.SearchResult{
+				{CompanyNumber: "00445790", Title: "TESCO PLC", CompanyStatus: "active", CompanyType: "plc"},
+				{CompanyNumber: "04052720", Title: "TESCO STORES LIMITED", CompanyStatus: "active", CompanyType: "ltd"},
+			}, nil,
+		)
+		defer svc.AssertExpectations(t)
+		cmd := &GetCompanyBriefCmd{CompanyName: "Tesco", Limit: 20, out: io.Discard}
+
+		// Act
+		err := cmd.Run(context.Background(), svc, &mockFilingCache{})
+
+		// Assert
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "00445790")
+		assert.Contains(t, err.Error(), "04052720")
+	})
+
+	t.Run("should return an error when both company-name and ch-number are missing", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		cmd := &GetCompanyBriefCmd{Limit: 20, out: io.Discard}
+
+		// Act
+		err := cmd.Run(context.Background(), &mockCHSvc{}, &mockFilingCache{})
+
+		// Assert
+		require.Error(t, err)
+	})
+
+	t.Run("should return an error for an invalid ch-number", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		cmd := &GetCompanyBriefCmd{CHNumber: "../../etc", Limit: 20, out: io.Discard}
+
+		// Act
+		err := cmd.Run(context.Background(), &mockCHSvc{}, &mockFilingCache{})
+
+		// Assert
+		require.Error(t, err)
+	})
+
+	t.Run("should return an error when the profile is not found", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		svc := &mockCHSvc{}
+		svc.On("GetCompanyProfile", mock.Anything, chNumber).Return(nil, companyhouse.ErrNotFound)
+		defer svc.AssertExpectations(t)
+		cmd := &GetCompanyBriefCmd{CHNumber: chNumber, Limit: 20, out: io.Discard}
+
+		// Act
+		err := cmd.Run(context.Background(), svc, &mockFilingCache{})
+
+		// Assert
+		require.Error(t, err)
+	})
+
+	t.Run("should clamp limit to the default when <= 0", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		svc := &mockCHSvc{}
+		svc.On("GetCompanyProfile", mock.Anything, chNumber).Return(profile, nil)
+		svc.On("GetFilingHistory", mock.Anything, chNumber, companyhouse.ListFilingsOptions{
+			Category: companyhouse.CategoryAccounts, ItemsPerPage: 1,
+		}).Return([]companyhouse.Filing{}, nil)
+		svc.On("GetFilingHistory", mock.Anything, chNumber, companyhouse.ListFilingsOptions{
+			Category: companyhouse.CategoryConfirmationStatement, ItemsPerPage: 1,
+		}).Return([]companyhouse.Filing{}, nil)
+		svc.On("GetCharges", mock.Anything, chNumber).Return(nil, companyhouse.ErrNotFound)
+		svc.On("GetPersonsWithSignificantControl", mock.Anything, chNumber).Return(nil, companyhouse.ErrNotFound)
+		svc.On("GetInsolvencyCases", mock.Anything, chNumber).Return(nil, companyhouse.ErrNotFound)
+		svc.On("GetFilingHistory", mock.Anything, chNumber, companyhouse.ListFilingsOptions{
+			ItemsPerPage: defaultBriefRecentLimit + briefRecentFetchPadding,
+		}).Return([]companyhouse.Filing{}, nil)
+		defer svc.AssertExpectations(t)
+		cmd := &GetCompanyBriefCmd{CHNumber: chNumber, Limit: -5, out: io.Discard}
+
+		// Act
+		err := cmd.Run(context.Background(), svc, &mockFilingCache{})
+
+		// Assert
+		require.NoError(t, err)
+	})
+
+	t.Run("should clamp limit to the max when > 40", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		svc := &mockCHSvc{}
+		svc.On("GetCompanyProfile", mock.Anything, chNumber).Return(profile, nil)
+		svc.On("GetFilingHistory", mock.Anything, chNumber, companyhouse.ListFilingsOptions{
+			Category: companyhouse.CategoryAccounts, ItemsPerPage: 1,
+		}).Return([]companyhouse.Filing{}, nil)
+		svc.On("GetFilingHistory", mock.Anything, chNumber, companyhouse.ListFilingsOptions{
+			Category: companyhouse.CategoryConfirmationStatement, ItemsPerPage: 1,
+		}).Return([]companyhouse.Filing{}, nil)
+		svc.On("GetCharges", mock.Anything, chNumber).Return(nil, companyhouse.ErrNotFound)
+		svc.On("GetPersonsWithSignificantControl", mock.Anything, chNumber).Return(nil, companyhouse.ErrNotFound)
+		svc.On("GetInsolvencyCases", mock.Anything, chNumber).Return(nil, companyhouse.ErrNotFound)
+		svc.On("GetFilingHistory", mock.Anything, chNumber, companyhouse.ListFilingsOptions{
+			ItemsPerPage: maxBriefRecentLimit + briefRecentFetchPadding,
+		}).Return([]companyhouse.Filing{}, nil)
+		defer svc.AssertExpectations(t)
+		cmd := &GetCompanyBriefCmd{CHNumber: chNumber, Limit: 999, out: io.Discard}
+
+		// Act
+		err := cmd.Run(context.Background(), svc, &mockFilingCache{})
+
+		// Assert
+		require.NoError(t, err)
+	})
+
+	t.Run("should propagate a rate-limit error from GetCharges, distinct from ErrNotFound", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		svc := &mockCHSvc{}
+		svc.On("GetCompanyProfile", mock.Anything, chNumber).Return(profile, nil)
+		svc.On("GetFilingHistory", mock.Anything, chNumber, companyhouse.ListFilingsOptions{
+			Category: companyhouse.CategoryAccounts, ItemsPerPage: 1,
+		}).Return([]companyhouse.Filing{}, nil)
+		svc.On("GetFilingHistory", mock.Anything, chNumber, companyhouse.ListFilingsOptions{
+			Category: companyhouse.CategoryConfirmationStatement, ItemsPerPage: 1,
+		}).Return([]companyhouse.Filing{}, nil)
+		svc.On("GetCharges", mock.Anything, chNumber).Return(nil, companyhouse.ErrRateLimited)
+		defer svc.AssertExpectations(t)
+		cmd := &GetCompanyBriefCmd{CHNumber: chNumber, Limit: 20, out: io.Discard}
+
+		// Act
+		err := cmd.Run(context.Background(), svc, &mockFilingCache{})
+
+		// Assert
+		require.Error(t, err)
+	})
+
+	t.Run("should backfill recent_filings past excluded accounts/confirmation duplicates up to limit", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		const limit = 1
+		otherFiling := companyhouse.Filing{
+			TransactionID: "tx-recent",
+			Type:          "AD01",
+			DocumentURL:   "https://document-api.company-information.service.gov.uk/document/recent",
+		}
+		unreachedFiling := companyhouse.Filing{
+			TransactionID: "tx-unreached",
+			Type:          "AD01",
+			DocumentURL:   "https://document-api.company-information.service.gov.uk/document/unreached",
+		}
+		svc := &mockCHSvc{}
+		svc.On("GetCompanyProfile", mock.Anything, chNumber).Return(profile, nil)
+		svc.On("GetFilingHistory", mock.Anything, chNumber, companyhouse.ListFilingsOptions{
+			Category: companyhouse.CategoryAccounts, ItemsPerPage: 1,
+		}).Return([]companyhouse.Filing{accountsFiling}, nil)
+		svc.On("GetFilingHistory", mock.Anything, chNumber, companyhouse.ListFilingsOptions{
+			Category: companyhouse.CategoryConfirmationStatement, ItemsPerPage: 1,
+		}).Return([]companyhouse.Filing{confirmationFiling}, nil)
+		svc.On("GetCharges", mock.Anything, chNumber).Return(nil, companyhouse.ErrNotFound)
+		svc.On("GetPersonsWithSignificantControl", mock.Anything, chNumber).Return(nil, companyhouse.ErrNotFound)
+		svc.On("GetInsolvencyCases", mock.Anything, chNumber).Return(nil, companyhouse.ErrNotFound)
+		// Padded window (limit + briefRecentFetchPadding = 3) returns the two duplicates plus
+		// two genuinely-new filings; only the first new one should ever be reached.
+		svc.On("GetFilingHistory", mock.Anything, chNumber, companyhouse.ListFilingsOptions{
+			ItemsPerPage: limit + briefRecentFetchPadding,
+		}).Return([]companyhouse.Filing{accountsFiling, confirmationFiling, otherFiling, unreachedFiling}, nil)
+		defer svc.AssertExpectations(t)
+
+		fc := &mockFilingCache{}
+		fc.On("StoreFilingRef", mock.Anything, chNumber, "tx-accounts", accountsFiling.DocumentURL).Return("doc-accounts", nil)
+		fc.On("StoreFilingRef", mock.Anything, chNumber, "tx-confirmation", confirmationFiling.DocumentURL).Return("doc-confirmation", nil)
+		fc.On("StoreFilingRef", mock.Anything, chNumber, "tx-recent", otherFiling.DocumentURL).Return("doc-recent", nil)
+		// No expectation for "tx-unreached": the loop must stop at limit before reaching it,
+		// or this mock panics on an unexpected call.
+		defer fc.AssertExpectations(t)
+
+		var buf bytes.Buffer
+		cmd := &GetCompanyBriefCmd{CHNumber: chNumber, Limit: limit, out: &buf}
+
+		// Act
+		err := cmd.Run(context.Background(), svc, fc)
+
+		// Assert
+		require.NoError(t, err)
+		var out result.CompanyBriefResult
+		require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+		require.Len(t, out.RecentFilings, 1, "should backfill past the excluded duplicates instead of returning short")
+		assert.Equal(t, "doc-recent", out.RecentFilings[0].DocumentID)
+	})
+
+	t.Run("should return an error when a company-name search resolves to a malformed ch-number", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		svc := &mockCHSvc{}
+		svc.On("SearchCompanies", mock.Anything, "Bad Co", briefCandidateLimit).Return(
+			[]companyhouse.SearchResult{{CompanyNumber: "../../etc", Title: "BAD CO"}}, nil,
+		)
+		defer svc.AssertExpectations(t) // GetCompanyProfile must not be called once validation fails
+		cmd := &GetCompanyBriefCmd{CompanyName: "Bad Co", Limit: 20, out: io.Discard}
 
 		// Act
 		err := cmd.Run(context.Background(), svc, &mockFilingCache{})

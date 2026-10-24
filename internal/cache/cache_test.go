@@ -198,6 +198,34 @@ func TestPut(t *testing.T) {
 		assert.Equal(t, wantName, filepath.Base(localPath))
 	})
 
+	for _, test := range []struct {
+		name     string
+		filename string
+	}{
+		{name: "slash traversal", filename: "../../index.db"},
+		{name: "backslash traversal", filename: `..\..\index.db`},
+		{name: "absolute path", filename: "/tmp/report.pdf"},
+		{name: "drive-qualified path", filename: `C:\temp\report.pdf`},
+		{name: "UNC path", filename: `\\server\share\report.pdf`},
+		{name: "current directory", filename: "."},
+		{name: "parent directory", filename: ".."},
+	} {
+		t.Run("should reject "+test.name+" as a filename", func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			c := newTestCache(t)
+			filingDir := filepath.Join(c.baseDir, cacheSubDir, "00445790", "abc123")
+
+			// Act
+			_, _, err := c.Put(context.Background(), "00445790", "abc123", "application/pdf", test.filename, bytes.NewReader([]byte("data")))
+
+			// Assert
+			require.ErrorContains(t, err, "outside filing directory")
+			assert.NoDirExists(t, filingDir)
+		})
+	}
+
 	t.Run("should overwrite an existing entry", func(t *testing.T) {
 		t.Parallel()
 
@@ -466,6 +494,36 @@ func TestPutZipEntries(t *testing.T) {
 		// Assert
 		assert.ErrorContains(t, err, "primary")
 	})
+
+	for _, test := range []struct {
+		name     string
+		filename string
+	}{
+		{name: "slash traversal", filename: "../../index.db"},
+		{name: "backslash traversal", filename: `..\..\index.db`},
+		{name: "absolute path", filename: "/tmp/report.xhtml"},
+		{name: "drive-qualified path", filename: `C:\temp\report.xhtml`},
+		{name: "UNC path", filename: `\\server\share\report.xhtml`},
+	} {
+		t.Run("should reject "+test.name+" before writing zip entries", func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			c := newTestCache(t)
+			filingDir := filepath.Join(c.baseDir, cacheSubDir, "03033634", "T01")
+			entries := []ZipCacheEntry{
+				{Filename: "report.xhtml", ContentType: "application/xhtml+xml", Content: []byte("<xhtml/>"), IsPrimary: true},
+				{Filename: test.filename, ContentType: "application/pdf", Content: []byte("PDF")},
+			}
+
+			// Act
+			_, err := c.PutZipEntries(context.Background(), "03033634", "T01", entries, len(entries))
+
+			// Assert
+			require.ErrorContains(t, err, "outside filing directory")
+			assert.NoDirExists(t, filingDir)
+		})
+	}
 }
 
 func TestGetZipEntries(t *testing.T) {
