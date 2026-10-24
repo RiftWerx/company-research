@@ -34,6 +34,7 @@ func (s *Server) Serve() error {
 	mcpServer.AddTool(listFilingsTool(), s.handleListFilings)
 	mcpServer.AddTool(fetchFilingTool(), s.handleFetchFiling)
 	mcpServer.AddTool(getLatestTool(), s.handleGetLatest)
+	mcpServer.AddTool(getCompanyBriefTool(), s.handleGetCompanyBrief)
 	mcpServer.AddTool(listZipContentsTool(), s.handleListZipContents)
 	mcpServer.AddTool(extractXBRLFactsTool(), s.handleExtractXBRLFacts)
 	mcpServer.AddTool(clearCacheTool(), s.handleClearCache)

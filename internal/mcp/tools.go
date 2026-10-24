@@ -122,6 +122,26 @@ func listZipContentsTool() mcp.Tool {
 	)
 }
 
+// getCompanyBriefTool returns the tool definition for get_company_brief.
+func getCompanyBriefTool() mcp.Tool {
+	return mcp.NewTool("get_company_brief",
+		mcp.WithDescription("One-shot company research brief. Resolves a company by name or Companies House number, then returns its "+
+			"profile, latest accounts, latest confirmation statement, active charges, active persons with significant control, "+
+			"insolvency cases recorded by Companies House, and a bounded list of recent filings. Metadata and document_ids only — no document content is "+
+			"fetched; follow up with fetch_filing for any document you need to read. If company_name matches more than one company, "+
+			"returns an error listing candidates ({ch_number}: {name} ({status}, {type})) — retry with an explicit ch_number."),
+		mcp.WithString("company_name",
+			mcp.Description("Company name to search for. Required if ch_number is omitted. Ignored if ch_number is given."),
+		),
+		mcp.WithString("ch_number",
+			mcp.Description("Companies House number, if already known. Skips the name search."),
+		),
+		mcp.WithNumber("limit",
+			mcp.Description("Maximum number of recent_filings entries to return (default 20, max 40)"),
+		),
+	)
+}
+
 // clearCacheTool returns the tool definition for clear_cache.
 func clearCacheTool() mcp.Tool {
 	return mcp.NewTool("clear_cache",

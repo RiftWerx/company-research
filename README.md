@@ -138,20 +138,15 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ### Continue.dev
 
-Add to `~/.continue/config.json` under `mcpServers`:
+Add the server under `mcpServers` in your Continue `config.yaml` (global path:
+`~/.continue/config.yaml`). MCP servers are available in Agent mode.
 
-```json
-{
-  "mcpServers": [
-    {
-      "name": "company-research",
-      "command": "company-research",
-      "env": {
-        "CH_API_KEY": "your-key-here"
-      }
-    }
-  ]
-}
+```yaml
+mcpServers:
+  - name: company-research
+    command: company-research
+    env:
+      CH_API_KEY: your-key-here
 ```
 
 ## CLI Mode
@@ -167,8 +162,9 @@ company-research get-latest 00445790 accounts
 company-research get-company-profile 00445790 | jq .name
 ```
 
-All commands output JSON to stdout; errors go to stderr with exit 1. Run
-`company-research --help` for a full list of subcommands and flags.
+Data commands output JSON to stdout; errors go to stderr with exit 1. The `install-skill`
+setup command instead prints the installed file paths. Run `company-research --help` for a
+full list of subcommands and flags.
 
 ## Agent Skills
 
@@ -178,6 +174,7 @@ company-research effectively. No `CH_API_KEY` required.
 ### Claude Code
 
 ```bash
+mkdir -p ~/.claude/skills/
 company-research install-skill ~/.claude/skills/
 ```
 
@@ -207,6 +204,7 @@ company-research install-skill <agent-skill-directory>
 | `list_filings` | List filing history for a company; returns a `document_id` for each filing (filings without a downloadable document are excluded) |
 | `fetch_filing` | Download a specific filing document using the `document_id` from `list_filings` |
 | `get_latest` | Fetch the most recent filing of a given category; returns a `document_id` alongside the local path |
+| `get_company_brief` | One-shot research brief: resolves a company by name or number, then returns profile + latest accounts + latest confirmation statement + active charges + active persons with significant control + insolvency cases recorded by Companies House + recent filings, all as metadata and `document_id`s only |
 | `list_zip_contents` | List all documents extracted from a zip archive filing; use when `fetch_filing` or `get_latest` returns `is_archive: true` |
 | `extract_xbrl_facts` | Parse a cached iXBRL `.xhtml` file and return structured financial facts as JSON; also reports whether the document is native iXBRL or PDF-rendered |
 | `clear_cache` | Delete cached filing documents |
@@ -254,9 +252,9 @@ Downloaded filings are stored on disk and reused on subsequent requests:
 
 | Platform | Path |
 |---|---|
-| Linux | `~/.cache/company-research/` |
-| macOS | `~/Library/Caches/company-research/` |
-| Windows | `%LOCALAPPDATA%\company-research\` |
+| Linux (default) | `~/.cache/company-research/` |
+| macOS (default) | `~/Library/Caches/company-research/` |
+| Windows (default) | `%LOCALAPPDATA%\company-research\` |
 
 Use the `clear_cache` tool to free disk space.
 
@@ -276,14 +274,15 @@ EC2A 2AG. SIC code: 64191 (Banks).
 
 ---
 
-### Fetch and summarise the latest accounts
+### Fetch and summarise historical accounts
 
-> Look up Rolls-Royce Holdings, then download and summarise their most recent annual accounts
+> Look up Rolls-Royce Holdings, then download and summarise the annual accounts for the year ended 31 December 2023
 
-*Tools: `search_company` → `get_company_profile` → `get_latest`*
+*Tools: `search_company` → `get_company_profile` → `list_filings` → `fetch_filing`*
 
-**Agent:** Found Rolls-Royce Holdings plc (CH: 07524813), active. Fetching the latest
-`accounts` filing… downloaded 4.2 MB PDF to the local cache.
+**Historical illustrative response (FY2023):** Found Rolls-Royce Holdings plc (CH: 07524813),
+active. Fetching its accounts for the year ended 31 December 2023… downloaded a 4.2 MB PDF to
+the local cache.
 
 *[reads document]*
 
@@ -291,6 +290,21 @@ The accounts cover the year ended 31 December 2023. Revenue was £16.5 billion (
 year-on-year), driven by growth in Civil Aerospace. Underlying operating profit was £1.6
 billion, compared to £652 million in 2022. Net debt reduced from £3.3 billion to £0.2
 billion. The auditors issued an unqualified opinion.
+
+---
+
+### One-shot research brief
+
+> Give me a quick research brief on Tesco — accounts, ownership, any charges or insolvency
+
+*Tools: `get_company_brief`*
+
+**Agent:** Tesco PLC (CH: 00445790) is **active**, a public limited company incorporated in
+1947. The brief includes document IDs and filing dates for the latest accounts and
+confirmation statement, plus 2 outstanding charges delivered in 2009. No active
+persons with significant control or insolvency cases are recorded in the returned
+registers. Fetch the accounts document to read its reporting period and financial
+details; the brief does not report filing deadlines or reasons for PSC exemptions.
 
 ---
 
