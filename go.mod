@@ -3,7 +3,7 @@ module github.com/riftwerx/company-research
 go 1.27.3
 
 require (
-	github.com/alecthomas/kong v1.16.1
+	github.com/alecthomas/kong v1.17.0
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v1.3.0
 	github.com/stretchr/testify v1.12.1
