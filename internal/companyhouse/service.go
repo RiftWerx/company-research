@@ -13,6 +13,13 @@ import (
 
 const defaultBaseURL = "https://api.company-information.service.gov.uk"
 
+// Register reads use 100 items per request and fail above 10,000 entries rather
+// than return a partial register as if it were complete.
+const (
+	registerPageSize   = 100
+	maxRegisterEntries = 10_000
+)
+
 // HTTPDoer is the HTTP transport interface required by Service.
 // *client.Client satisfies this interface.
 type HTTPDoer interface {
@@ -195,6 +202,213 @@ func (s *Service) GetFilingHistory(ctx context.Context, chNumber string, opts Li
 		})
 	}
 	return filings, nil
+}
+
+// GetCharges returns a company's charges (mortgages/debentures) register.
+// A 404 (no charges on record) is returned to the caller as ErrNotFound.
+func (s *Service) GetCharges(ctx context.Context, chNumber string) ([]Charge, error) {
+	endpoint := "/company/" + padCHNumber(chNumber) + "/charges"
+	var charges []Charge
+	var expectedTotal int
+	hasExpectedTotal := false
+	totalMetadataPresent := false
+	for startIndex := 0; ; {
+		if startIndex >= maxRegisterEntries {
+			return nil, fmt.Errorf("get charges: register exceeds safety limit of %d entries", maxRegisterEntries)
+		}
+		pageSize := min(registerPageSize, maxRegisterEntries-startIndex)
+		params := url.Values{}
+		params.Set("items_per_page", strconv.Itoa(pageSize))
+		params.Set("start_index", strconv.Itoa(startIndex))
+
+		resp, err := s.get(ctx, endpoint+"?"+params.Encode())
+		if err != nil {
+			return nil, fmt.Errorf("get charges: %w", err)
+		}
+		var body struct {
+			TotalCount *int `json:"total_count"`
+			Items      []struct {
+				Classification  ChargeClassification `json:"classification"`
+				Status          string               `json:"status"`
+				DeliveredOn     string               `json:"delivered_on"`
+				PersonsEntitled []struct {
+					Name string `json:"name"`
+				} `json:"persons_entitled"`
+			} `json:"items"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&body)
+		_ = resp.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("get charges: decode response: %w", decodeErr)
+		}
+		if len(body.Items) > pageSize {
+			return nil, fmt.Errorf("get charges: response returned %d items for a page size of %d", len(body.Items), pageSize)
+		}
+		if body.TotalCount != nil {
+			if startIndex > 0 && !totalMetadataPresent {
+				return nil, fmt.Errorf("get charges: total_count appeared after the first page")
+			}
+			if hasExpectedTotal && *body.TotalCount != expectedTotal {
+				return nil, fmt.Errorf("get charges: total_count changed from %d to %d between pages", expectedTotal, *body.TotalCount)
+			}
+			if *body.TotalCount < 0 || *body.TotalCount < len(charges)+len(body.Items) {
+				return nil, fmt.Errorf("get charges: inconsistent total_count %d for at least %d items", *body.TotalCount, len(charges)+len(body.Items))
+			}
+			if *body.TotalCount > maxRegisterEntries {
+				return nil, fmt.Errorf("get charges: register has %d entries, exceeding safety limit of %d", *body.TotalCount, maxRegisterEntries)
+			}
+			expectedTotal = *body.TotalCount
+			hasExpectedTotal = true
+		} else if startIndex > 0 && totalMetadataPresent {
+			return nil, fmt.Errorf("get charges: total_count missing from a later page")
+		}
+		totalMetadataPresent = body.TotalCount != nil
+
+		for _, item := range body.Items {
+			persons := make([]string, len(item.PersonsEntitled))
+			for j, person := range item.PersonsEntitled {
+				persons[j] = person.Name
+			}
+			charges = append(charges, Charge{
+				Classification:  item.Classification,
+				Status:          item.Status,
+				DeliveredOn:     item.DeliveredOn,
+				PersonsEntitled: persons,
+			})
+		}
+		if len(charges) > maxRegisterEntries {
+			return nil, fmt.Errorf("get charges: register exceeds safety limit of %d entries", maxRegisterEntries)
+		}
+		if body.TotalCount != nil && len(charges) == *body.TotalCount {
+			return charges, nil
+		}
+		if len(body.Items) == 0 {
+			if body.TotalCount == nil {
+				return charges, nil
+			}
+			return nil, fmt.Errorf("get charges: empty page before total_count %d was reached", *body.TotalCount)
+		}
+		if body.TotalCount == nil && len(body.Items) < pageSize {
+			return charges, nil
+		}
+		startIndex += len(body.Items)
+	}
+}
+
+// GetPersonsWithSignificantControl returns a company's PSC register.
+// A 404 (no PSC on record) is returned to the caller as ErrNotFound.
+func (s *Service) GetPersonsWithSignificantControl(ctx context.Context, chNumber string) ([]PSC, error) {
+	endpoint := "/company/" + padCHNumber(chNumber) + "/persons-with-significant-control"
+	var pscs []PSC
+	expectedTotal := -1
+	for startIndex := 0; ; {
+		if startIndex >= maxRegisterEntries {
+			return nil, fmt.Errorf("get persons with significant control: register exceeds safety limit of %d entries", maxRegisterEntries)
+		}
+		pageSize := min(registerPageSize, maxRegisterEntries-startIndex)
+		params := url.Values{}
+		params.Set("items_per_page", strconv.Itoa(pageSize))
+		params.Set("start_index", strconv.Itoa(startIndex))
+		params.Set("register_view", "false")
+
+		resp, err := s.get(ctx, endpoint+"?"+params.Encode())
+		if err != nil {
+			return nil, fmt.Errorf("get persons with significant control: %w", err)
+		}
+		var body struct {
+			StartIndex   *int `json:"start_index"`
+			ItemsPerPage *int `json:"items_per_page"`
+			TotalResults *int `json:"total_results"`
+			Items        []struct {
+				Name             string   `json:"name"`
+				Kind             string   `json:"kind"`
+				NaturesOfControl []string `json:"natures_of_control"`
+				NotifiedOn       string   `json:"notified_on"`
+				CeasedOn         string   `json:"ceased_on"`
+				Ceased           bool     `json:"ceased"`
+			} `json:"items"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&body)
+		_ = resp.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("get persons with significant control: decode response: %w", decodeErr)
+		}
+		if body.StartIndex == nil || body.ItemsPerPage == nil || body.TotalResults == nil {
+			return nil, fmt.Errorf("get persons with significant control: response missing pagination metadata")
+		}
+		if *body.StartIndex != startIndex {
+			return nil, fmt.Errorf("get persons with significant control: response start_index %d does not match requested index %d", *body.StartIndex, startIndex)
+		}
+		if *body.ItemsPerPage <= 0 || len(body.Items) > *body.ItemsPerPage {
+			return nil, fmt.Errorf("get persons with significant control: invalid items_per_page %d for %d items", *body.ItemsPerPage, len(body.Items))
+		}
+		if *body.TotalResults < 0 || *body.TotalResults < len(pscs)+len(body.Items) {
+			return nil, fmt.Errorf("get persons with significant control: inconsistent total_results %d for at least %d items", *body.TotalResults, len(pscs)+len(body.Items))
+		}
+		if expectedTotal >= 0 && *body.TotalResults != expectedTotal {
+			return nil, fmt.Errorf("get persons with significant control: total_results changed from %d to %d between pages", expectedTotal, *body.TotalResults)
+		}
+		if *body.TotalResults > maxRegisterEntries {
+			return nil, fmt.Errorf("get persons with significant control: register has %d entries, exceeding safety limit of %d", *body.TotalResults, maxRegisterEntries)
+		}
+		expectedTotal = *body.TotalResults
+
+		for _, item := range body.Items {
+			pscs = append(pscs, PSC{
+				Name:             item.Name,
+				Kind:             item.Kind,
+				NaturesOfControl: item.NaturesOfControl,
+				NotifiedOn:       item.NotifiedOn,
+				CeasedOn:         item.CeasedOn,
+				Ceased:           item.Ceased,
+			})
+		}
+		if len(pscs) == *body.TotalResults {
+			return pscs, nil
+		}
+		if len(body.Items) == 0 {
+			return nil, fmt.Errorf("get persons with significant control: empty page before total_results %d was reached", *body.TotalResults)
+		}
+		startIndex += len(body.Items)
+	}
+}
+
+// GetInsolvencyCases returns a company's insolvency register.
+// A 404 (no insolvency cases on record) is returned to the caller as ErrNotFound.
+func (s *Service) GetInsolvencyCases(ctx context.Context, chNumber string) ([]InsolvencyCase, error) {
+	resp, err := s.get(ctx, "/company/"+padCHNumber(chNumber)+"/insolvency")
+	if err != nil {
+		return nil, fmt.Errorf("get insolvency cases: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var body struct {
+		Cases []struct {
+			Type   string `json:"type"`
+			Number string `json:"number"`
+			Dates  []struct {
+				Type string `json:"type"`
+				Date string `json:"date"`
+			} `json:"dates"`
+		} `json:"cases"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, fmt.Errorf("get insolvency cases: decode response: %w", err)
+	}
+
+	cases := make([]InsolvencyCase, len(body.Cases))
+	for i, item := range body.Cases {
+		dates := make([]InsolvencyDate, len(item.Dates))
+		for j, d := range item.Dates {
+			dates[j] = InsolvencyDate{Type: d.Type, Date: d.Date}
+		}
+		cases[i] = InsolvencyCase{
+			CaseType: item.Type,
+			Number:   item.Number,
+			Dates:    dates,
+		}
+	}
+	return cases, nil
 }
 
 // GetDocument downloads a document using its metadata URL (Filing.DocumentURL).

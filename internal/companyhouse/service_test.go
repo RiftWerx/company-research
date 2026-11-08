@@ -358,3 +358,332 @@ func TestGetDocument(t *testing.T) {
 		assert.ErrorIs(t, err, companyhouse.ErrNotFound)
 	})
 }
+
+// ---- GetCharges ----
+
+func TestGetCharges(t *testing.T) {
+	t.Run("should parse the classification, status, and persons entitled", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		var gotPath string
+		stub := &stubHTTP{fn: func(req *http.Request) (*http.Response, error) {
+			gotPath = req.URL.Path
+			return jsonResponse(http.StatusOK, map[string]any{
+				"total_count": 1,
+				"items": []map[string]any{
+					{
+						"classification": map[string]any{
+							"type":        "charge-description",
+							"description": "Legal charge",
+						},
+						"status":       "outstanding",
+						"delivered_on": "2009-11-06",
+						"persons_entitled": []map[string]any{
+							{"name": "Example Bank PLC"},
+						},
+					},
+				},
+			}), nil
+		}}
+		svc := companyhouse.NewForTest(stub, "test-key", "")
+
+		// Act
+		charges, err := svc.GetCharges(context.Background(), "00445790")
+
+		// Assert
+		require.NoError(t, err)
+		assert.Equal(t, "/company/00445790/charges", gotPath)
+		assert.Equal(t, []companyhouse.Charge{{
+			Classification:  companyhouse.ChargeClassification{Description: "Legal charge", Type: "charge-description"},
+			Status:          "outstanding",
+			DeliveredOn:     "2009-11-06",
+			PersonsEntitled: []string{"Example Bank PLC"},
+		}}, charges)
+	})
+
+	t.Run("should retrieve every page", func(t *testing.T) {
+		t.Parallel()
+
+		var gotStarts []string
+		stub := &stubHTTP{fn: func(req *http.Request) (*http.Response, error) {
+			gotStarts = append(gotStarts, req.URL.Query().Get("start_index"))
+			assert.Equal(t, "100", req.URL.Query().Get("items_per_page"))
+			switch req.URL.Query().Get("start_index") {
+			case "0":
+				return jsonResponse(http.StatusOK, map[string]any{
+					"total_count": 3,
+					"items": []map[string]any{
+						{"classification": map[string]any{"description": "First", "type": "charge-description"}, "status": "outstanding"},
+						{"classification": map[string]any{"description": "Second", "type": "charge-description"}, "status": "outstanding"},
+					},
+				}), nil
+			case "2":
+				return jsonResponse(http.StatusOK, map[string]any{
+					"total_count": 3,
+					"items":       []map[string]any{{"classification": map[string]any{"description": "Third", "type": "charge-description"}, "status": "outstanding"}},
+				}), nil
+			default:
+				t.Fatalf("unexpected start_index %q", req.URL.Query().Get("start_index"))
+				return nil, nil
+			}
+		}}
+		svc := companyhouse.NewForTest(stub, "test-key", "")
+
+		charges, err := svc.GetCharges(context.Background(), "00445790")
+
+		require.NoError(t, err)
+		assert.Equal(t, []string{"0", "2"}, gotStarts)
+		require.Len(t, charges, 3)
+		assert.Equal(t, companyhouse.ChargeClassification{Description: "First", Type: "charge-description"}, charges[0].Classification)
+		assert.Equal(t, companyhouse.ChargeClassification{Description: "Third", Type: "charge-description"}, charges[2].Classification)
+	})
+
+	t.Run("should reject a register larger than the safety limit", func(t *testing.T) {
+		t.Parallel()
+
+		stub := &stubHTTP{fn: func(_ *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusOK, map[string]any{"total_count": 10_001, "items": []any{}}), nil
+		}}
+		svc := companyhouse.NewForTest(stub, "test-key", "")
+
+		_, err := svc.GetCharges(context.Background(), "00445790")
+
+		assert.ErrorContains(t, err, "exceeding safety limit")
+	})
+
+	t.Run("should reject changing pagination totals", func(t *testing.T) {
+		t.Parallel()
+
+		stub := &stubHTTP{fn: func(req *http.Request) (*http.Response, error) {
+			if req.URL.Query().Get("start_index") == "0" {
+				return jsonResponse(http.StatusOK, map[string]any{
+					"total_count": 2,
+					"items":       []map[string]any{{"status": "outstanding"}},
+				}), nil
+			}
+			return jsonResponse(http.StatusOK, map[string]any{
+				"total_count": 3,
+				"items":       []map[string]any{{"status": "outstanding"}},
+			}), nil
+		}}
+		svc := companyhouse.NewForTest(stub, "test-key", "")
+
+		_, err := svc.GetCharges(context.Background(), "00445790")
+
+		assert.ErrorContains(t, err, "total_count changed")
+	})
+
+	t.Run("should return ErrNotFound for a 404 response", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		stub := &stubHTTP{fn: func(req *http.Request) (*http.Response, error) {
+			return statusResponse(http.StatusNotFound), nil
+		}}
+		svc := companyhouse.NewForTest(stub, "test-key", "")
+
+		// Act
+		_, err := svc.GetCharges(context.Background(), "00000001")
+
+		// Assert
+		assert.ErrorIs(t, err, companyhouse.ErrNotFound)
+	})
+}
+
+// ---- GetPersonsWithSignificantControl ----
+
+func TestGetPersonsWithSignificantControl(t *testing.T) {
+	t.Run("should parse name, kind, natures of control, and ceased status", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		var gotPath string
+		gotQuery := map[string]string{}
+		stub := &stubHTTP{fn: func(req *http.Request) (*http.Response, error) {
+			gotPath = req.URL.Path
+			for key := range req.URL.Query() {
+				gotQuery[key] = req.URL.Query().Get(key)
+			}
+			return jsonResponse(http.StatusOK, map[string]any{
+				"start_index":    0,
+				"items_per_page": 100,
+				"total_results":  3,
+				"items": []map[string]any{
+					{
+						"name":               "Fresh Trading Limited",
+						"kind":               "corporate-entity-person-with-significant-control",
+						"natures_of_control": []string{"ownership-of-shares-75-to-100-percent"},
+						"notified_on":        "2016-04-06",
+					},
+					{
+						"name":        "Jane Doe",
+						"kind":        "individual-person-with-significant-control",
+						"notified_on": "2016-04-06",
+						"ceased_on":   "2023-08-03",
+					},
+					{"name": "Protected PSC", "kind": "super-secure-person-with-significant-control", "ceased": true},
+				},
+			}), nil
+		}}
+		svc := companyhouse.NewForTest(stub, "test-key", "")
+
+		// Act
+		pscs, err := svc.GetPersonsWithSignificantControl(context.Background(), "04007092")
+
+		// Assert
+		require.NoError(t, err)
+		assert.Equal(t, "/company/04007092/persons-with-significant-control", gotPath)
+		assert.Equal(t, "100", gotQuery["items_per_page"])
+		assert.Equal(t, "0", gotQuery["start_index"])
+		assert.Equal(t, "false", gotQuery["register_view"])
+		require.Len(t, pscs, 3)
+		assert.Equal(t, "Fresh Trading Limited", pscs[0].Name)
+		assert.False(t, pscs[0].Ceased)
+		assert.Empty(t, pscs[0].CeasedOn)
+		assert.Equal(t, "2023-08-03", pscs[1].CeasedOn)
+		assert.True(t, pscs[2].Ceased)
+	})
+
+	t.Run("should retrieve every page", func(t *testing.T) {
+		t.Parallel()
+
+		var gotStarts []string
+		stub := &stubHTTP{fn: func(req *http.Request) (*http.Response, error) {
+			gotStarts = append(gotStarts, req.URL.Query().Get("start_index"))
+			switch req.URL.Query().Get("start_index") {
+			case "0":
+				return jsonResponse(http.StatusOK, map[string]any{
+					"start_index": 0, "items_per_page": 1, "total_results": 2,
+					"items": []map[string]any{{"name": "First PSC"}},
+				}), nil
+			case "1":
+				return jsonResponse(http.StatusOK, map[string]any{
+					"start_index": 1, "items_per_page": 1, "total_results": 2,
+					"items": []map[string]any{{"name": "Second PSC"}},
+				}), nil
+			default:
+				t.Fatalf("unexpected start_index %q", req.URL.Query().Get("start_index"))
+				return nil, nil
+			}
+		}}
+		svc := companyhouse.NewForTest(stub, "test-key", "")
+
+		pscs, err := svc.GetPersonsWithSignificantControl(context.Background(), "04007092")
+
+		require.NoError(t, err)
+		assert.Equal(t, []string{"0", "1"}, gotStarts)
+		require.Len(t, pscs, 2)
+		assert.Equal(t, "Second PSC", pscs[1].Name)
+	})
+
+	t.Run("should reject a register larger than the safety limit", func(t *testing.T) {
+		t.Parallel()
+
+		stub := &stubHTTP{fn: func(_ *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusOK, map[string]any{
+				"start_index": 0, "items_per_page": 100, "total_results": 10_001, "items": []any{},
+			}), nil
+		}}
+		svc := companyhouse.NewForTest(stub, "test-key", "")
+
+		_, err := svc.GetPersonsWithSignificantControl(context.Background(), "04007092")
+
+		assert.ErrorContains(t, err, "exceeding safety limit")
+	})
+
+	t.Run("should reject changing pagination totals", func(t *testing.T) {
+		t.Parallel()
+
+		stub := &stubHTTP{fn: func(req *http.Request) (*http.Response, error) {
+			startIndex := req.URL.Query().Get("start_index")
+			if startIndex == "0" {
+				return jsonResponse(http.StatusOK, map[string]any{
+					"start_index": 0, "items_per_page": 1, "total_results": 2,
+					"items": []map[string]any{{"name": "First PSC"}},
+				}), nil
+			}
+			return jsonResponse(http.StatusOK, map[string]any{
+				"start_index": 1, "items_per_page": 1, "total_results": 3,
+				"items": []map[string]any{{"name": "Second PSC"}},
+			}), nil
+		}}
+		svc := companyhouse.NewForTest(stub, "test-key", "")
+
+		_, err := svc.GetPersonsWithSignificantControl(context.Background(), "04007092")
+
+		assert.ErrorContains(t, err, "total_results changed")
+	})
+
+	t.Run("should return ErrNotFound for a 404 response", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		stub := &stubHTTP{fn: func(req *http.Request) (*http.Response, error) {
+			return statusResponse(http.StatusNotFound), nil
+		}}
+		svc := companyhouse.NewForTest(stub, "test-key", "")
+
+		// Act
+		_, err := svc.GetPersonsWithSignificantControl(context.Background(), "00000001")
+
+		// Assert
+		assert.ErrorIs(t, err, companyhouse.ErrNotFound)
+	})
+}
+
+// ---- GetInsolvencyCases ----
+
+func TestGetInsolvencyCases(t *testing.T) {
+	t.Run("should parse case type, number, and dates", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		var gotPath string
+		stub := &stubHTTP{fn: func(req *http.Request) (*http.Response, error) {
+			gotPath = req.URL.Path
+			return jsonResponse(http.StatusOK, map[string]any{
+				"cases": []map[string]any{
+					{
+						"type":   "compulsory-liquidation",
+						"number": "1",
+						"dates": []map[string]any{
+							{"type": "petitioned-on", "date": "2018-01-15"},
+							{"type": "wound-up-on", "date": "2018-01-15"},
+						},
+					},
+				},
+			}), nil
+		}}
+		svc := companyhouse.NewForTest(stub, "test-key", "")
+
+		// Act
+		cases, err := svc.GetInsolvencyCases(context.Background(), "03782379")
+
+		// Assert
+		require.NoError(t, err)
+		assert.Equal(t, "/company/03782379/insolvency", gotPath)
+		require.Len(t, cases, 1)
+		assert.Equal(t, "compulsory-liquidation", cases[0].CaseType)
+		assert.Equal(t, "1", cases[0].Number)
+		require.Len(t, cases[0].Dates, 2)
+		assert.Equal(t, "petitioned-on", cases[0].Dates[0].Type)
+		assert.Equal(t, "2018-01-15", cases[0].Dates[0].Date)
+	})
+
+	t.Run("should return ErrNotFound for a 404 response", func(t *testing.T) {
+		t.Parallel()
+
+		// Arrange
+		stub := &stubHTTP{fn: func(req *http.Request) (*http.Response, error) {
+			return statusResponse(http.StatusNotFound), nil
+		}}
+		svc := companyhouse.NewForTest(stub, "test-key", "")
+
+		// Act
+		_, err := svc.GetInsolvencyCases(context.Background(), "00000001")
+
+		// Assert
+		assert.ErrorIs(t, err, companyhouse.ErrNotFound)
+	})
+}

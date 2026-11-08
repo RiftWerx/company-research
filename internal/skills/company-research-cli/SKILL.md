@@ -11,7 +11,8 @@ when_to_use: >
 
 `CH_API_KEY` must be set in the environment — not accepted as a CLI flag.
 
-All commands output JSON to stdout; errors go to stderr with exit 1. Use `jq` to extract fields.
+Data commands output JSON to stdout; errors go to stderr with exit 1. `install-skill` instead
+prints installed file paths. Use `jq` to extract fields from data-command output.
 
 ## Command reference
 
@@ -21,6 +22,7 @@ get-company-profile <ch-number>
 list-filings <ch-number> [-c/--category STR] [--start N] [-l/--limit N]
 fetch-filing <ch-number> <document-id>
 get-latest <ch-number> <category>
+get-company-brief [--company-name STR | --ch-number STR] [-l/--limit N]
 list-zip-contents <ch-number> <document-id>
 extract-xbrl-facts <local-path> [--name-prefix STR] [--include-text-facts]
 clear-cache [--ch-number STR]
@@ -38,6 +40,14 @@ company-research extract-xbrl-facts <local_path>            # financial facts
 `get-latest` shortcut — replaces `list-filings` + `fetch-filing`:
 ```bash
 company-research get-latest 00445790 accounts
+```
+
+`get-company-brief` shortcut — for "research this company" requests, prefer this as the
+first call: resolves by name or `--ch-number` and returns profile + latest accounts +
+latest confirmation statement + active charges + active PSC + insolvency cases recorded
+by Companies House + recent filings in one call:
+```bash
+company-research get-company-brief --company-name "Tesco"
 ```
 
 ## Key facts

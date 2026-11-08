@@ -22,6 +22,9 @@ type CompanyHouseService interface {
 	GetCompanyProfile(ctx context.Context, chNumber string) (*companyhouse.CompanyProfile, error)
 	GetFilingHistory(ctx context.Context, chNumber string, opts companyhouse.ListFilingsOptions) ([]companyhouse.Filing, error)
 	GetDocument(ctx context.Context, documentURL string) (*companyhouse.Document, error)
+	GetCharges(ctx context.Context, chNumber string) ([]companyhouse.Charge, error)
+	GetPersonsWithSignificantControl(ctx context.Context, chNumber string) ([]companyhouse.PSC, error)
+	GetInsolvencyCases(ctx context.Context, chNumber string) ([]companyhouse.InsolvencyCase, error)
 }
 
 // FilingCache is the subset of cache.Cache that CLI handlers require.
@@ -94,6 +97,7 @@ type CLI struct {
 	ListZipContents   ListZipContentsCmd   `cmd:"" name:"list-zip-contents" help:"List the contents of a cached zip filing."`
 	ExtractXBRLFacts  ExtractXBRLFactsCmd  `cmd:"" name:"extract-xbrl-facts" help:"Extract XBRL facts from a cached iXBRL file."`
 	ClearCache        ClearCacheCmd        `cmd:"" name:"clear-cache" help:"Clear the local document cache."`
+	GetCompanyBrief   GetCompanyBriefCmd   `cmd:"" name:"get-company-brief" help:"One-shot company research brief (profile + latest filings)."`
 }
 
 // Parse parses CLI arguments, handling --help, --version, and usage errors by exiting.

@@ -45,6 +45,30 @@ func safeInt64Size(n uint64) int64 {
 	return int64(n)
 }
 
+func safeArchiveFilename(name string) (string, error) {
+	normalized := strings.ReplaceAll(name, `\`, "/")
+	if normalized == "" || path.IsAbs(normalized) || hasWindowsVolumePrefix(normalized) {
+		return "", fmt.Errorf("zip entry %q has unsafe filename", name)
+	}
+
+	for component := range strings.SplitSeq(normalized, "/") {
+		if component == "" || component == "." || component == ".." {
+			return "", fmt.Errorf("zip entry %q has unsafe filename", name)
+		}
+	}
+
+	base := path.Base(normalized)
+	if base == "" || base == "." || base == ".." {
+		return "", fmt.Errorf("zip entry %q has unsafe filename", name)
+	}
+	return base, nil
+}
+
+func hasWindowsVolumePrefix(name string) bool {
+	return len(name) >= 2 && name[1] == ':' &&
+		((name[0] >= 'A' && name[0] <= 'Z') || (name[0] >= 'a' && name[0] <= 'z'))
+}
+
 // ReadBody reads at most maxBytes of zip data from r.
 // Returns ErrBodyTooLarge if the body exceeds maxBytes, or a wrapped error on read failure.
 func ReadBody(r io.Reader, maxBytes uint64) ([]byte, error) {
@@ -95,6 +119,39 @@ func ExtractAll(zipData []byte, maxBytes uint64) ([]Entry, int, error) {
 		}
 	}
 
+	// Resolve a safe, globally unique base name for every non-directory entry.
+	// Names are allocated in archive order so generated suffixes are deterministic.
+	nameForFile := make(map[*zip.File]string, totalFiles)
+	usedNames := make(map[string]struct{}, totalFiles)
+	nextSuffix := make(map[string]int)
+	for _, f := range r.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+
+		base, nameErr := safeArchiveFilename(f.Name)
+		if nameErr != nil {
+			return nil, 0, nameErr
+		}
+
+		name := base
+		if _, exists := usedNames[name]; exists {
+			ext := path.Ext(base)
+			stem := strings.TrimSuffix(base, ext)
+			// Never revisit suffixes already claimed or skipped for this base name.
+			for suffix := max(2, nextSuffix[base]); ; suffix++ {
+				candidate := fmt.Sprintf("%s_%d%s", stem, suffix, ext)
+				if _, candidateExists := usedNames[candidate]; !candidateExists {
+					name = candidate
+					nextSuffix[base] = suffix + 1
+					break
+				}
+			}
+		}
+		nameForFile[f] = name
+		usedNames[name] = struct{}{}
+	}
+
 	// Priority tiers for primary document selection.
 	const (
 		tierXHTML = 0
@@ -115,7 +172,7 @@ func ExtractAll(zipData []byte, maxBytes uint64) ([]Entry, int, error) {
 		if f.FileInfo().IsDir() {
 			continue
 		}
-		ext := strings.ToLower(path.Ext(f.Name))
+		ext := strings.ToLower(path.Ext(nameForFile[f]))
 		var tier int
 		switch ext {
 		case ".xhtml":
@@ -139,52 +196,12 @@ func ExtractAll(zipData []byte, maxBytes uint64) ([]Entry, int, error) {
 		return nil, 0, fmt.Errorf("zip contains no files")
 	}
 
-	// Resolve a unique base name for every non-directory file entry. When two
-	// entries share the same base name (e.g. "subdir1/report.xhtml" and
-	// "subdir2/report.xhtml"), a numeric suffix is appended to all but the first:
-	// stem_1.ext, stem_2.ext, … The first occurrence keeps its original name.
-	nameForFile := make(map[*zip.File]string, totalFiles)
-	{
-		baseCount := make(map[string]int, totalFiles)
-		for _, f := range r.File {
-			if !f.FileInfo().IsDir() {
-				baseCount[path.Base(f.Name)]++
-			}
-		}
-		seq := make(map[string]int, totalFiles)
-		for _, f := range r.File {
-			if f.FileInfo().IsDir() {
-				continue
-			}
-			base := path.Base(f.Name)
-			if baseCount[base] == 1 {
-				nameForFile[f] = base
-			} else {
-				seq[base]++
-				n := seq[base]
-				if n == 1 {
-					// First occurrence of a duplicate keeps its original name.
-					nameForFile[f] = base
-				} else {
-					// Subsequent occurrences get a numeric suffix: stem_2.ext, stem_3.ext, …
-					ext := path.Ext(base)
-					stem := strings.TrimSuffix(base, ext)
-					nameForFile[f] = fmt.Sprintf("%s_%d%s", stem, n, ext)
-				}
-			}
-		}
-	}
-
 	// Second pass: extract all file entries (up to MaxEntries), primary first.
 	entries := make([]Entry, 0, len(r.File))
 	count := 0
 
 	// readEntry extracts a single zip file entry using the pre-resolved name.
 	readEntry := func(f *zip.File, name string) (Entry, error) {
-		if name == "." || name == ".." {
-			return Entry{}, fmt.Errorf("zip entry %q has unusable base name", f.Name)
-		}
-
 		rc, openErr := f.Open()
 		if openErr != nil {
 			return Entry{}, fmt.Errorf("open zip entry %q: %w", f.Name, openErr)

@@ -143,6 +143,29 @@ var ErrOutsideCache = errors.New("path is outside the cache directory")
 // is not present in the filing_refs table.
 var ErrFilingRefNotFound = errors.New("document_id not found")
 
+func (c *Cache) filingEntryPaths(relDir, name string) (relFinal, finalPath string, err error) {
+	if name == "" || name == "." || name == ".." ||
+		strings.ContainsAny(name, `/\`) || filepath.IsAbs(name) ||
+		filepath.VolumeName(name) != "" || hasWindowsVolumePrefix(name) {
+		return "", "", fmt.Errorf("cache filename %q is outside filing directory", name)
+	}
+
+	relFinal = filepath.Join(relDir, name)
+	filingDir := filepath.Join(c.baseDir, relDir)
+	finalPath = filepath.Join(c.baseDir, relFinal)
+	rel, relErr := filepath.Rel(filingDir, finalPath)
+	if relErr != nil || rel == "." || filepath.IsAbs(rel) || rel == ".." ||
+		strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", "", fmt.Errorf("cache filename %q is outside filing directory", name)
+	}
+	return relFinal, finalPath, nil
+}
+
+func hasWindowsVolumePrefix(name string) bool {
+	return len(name) >= 2 && name[1] == ':' &&
+		((name[0] >= 'A' && name[0] <= 'Z') || (name[0] >= 'a' && name[0] <= 'z'))
+}
+
 // ValidatePath resolves symlinks in path and verifies it is within the cache
 // file subtree (baseDir/cache/uk/...). It returns the resolved real path on
 // success. If the path does not exist or cannot be resolved, the underlying OS
@@ -188,16 +211,17 @@ func (c *Cache) ParseFilingPath(realPath string) (chNumber, docID string, err er
 // a partially-written file from being visible as a valid cache entry.
 func (c *Cache) Put(ctx context.Context, chNumber, docID, contentType, filename string, body io.Reader) (localPath string, written int64, err error) {
 	relDir := filepath.Join(cacheSubDir, chNumber, docID)
-	if err := c.root.MkdirAll(relDir, 0o755); err != nil {
-		return "", 0, fmt.Errorf("create cache dir: %w", err)
-	}
-
 	name := filename
 	if name == "" {
 		name = "filing" + mime.Ext(contentType)
 	}
-	relFinal := filepath.Join(relDir, name)
-	finalPath := filepath.Join(c.baseDir, relFinal) // absolute path stored in the DB and returned to callers
+	relFinal, finalPath, err := c.filingEntryPaths(relDir, name)
+	if err != nil {
+		return "", 0, err
+	}
+	if err := c.root.MkdirAll(relDir, 0o755); err != nil {
+		return "", 0, fmt.Errorf("create cache dir: %w", err)
+	}
 
 	// Write to a temp file in the same directory so Rename is atomic (same fs).
 	relTmp := filepath.Join(relDir, fmt.Sprintf("filing-%016x.tmp", rand.Uint64())) //nolint:gosec // G404: temp file suffix does not require cryptographic randomness
@@ -294,6 +318,23 @@ func (c *Cache) PutZipEntries(ctx context.Context, chNumber, docID string, entri
 	}
 
 	relDir := filepath.Join(cacheSubDir, chNumber, docID)
+	names := make([]string, len(entries))
+	relFinals := make([]string, len(entries))
+	finalPaths := make([]string, len(entries))
+	for i, entry := range entries {
+		name := entry.Filename
+		if name == "" {
+			name = "filing" + mime.Ext(entry.ContentType)
+		}
+		relFinal, finalPath, pathErr := c.filingEntryPaths(relDir, name)
+		if pathErr != nil {
+			return "", pathErr
+		}
+		names[i] = name
+		relFinals[i] = relFinal
+		finalPaths[i] = finalPath
+	}
+
 	if err := c.root.MkdirAll(relDir, 0o755); err != nil {
 		return "", fmt.Errorf("create cache dir: %w", err)
 	}
@@ -319,13 +360,10 @@ func (c *Cache) PutZipEntries(ctx context.Context, chNumber, docID string, entri
 
 	var primaryPath string
 
-	for _, entry := range entries {
-		name := entry.Filename
-		if name == "" {
-			name = "filing" + mime.Ext(entry.ContentType)
-		}
-		relFinal := filepath.Join(relDir, name)
-		finalPath := filepath.Join(c.baseDir, relFinal)
+	for i, entry := range entries {
+		name := names[i]
+		relFinal := relFinals[i]
+		finalPath := finalPaths[i]
 
 		relTmp := filepath.Join(relDir, fmt.Sprintf("filing-%016x.tmp", rand.Uint64())) //nolint:gosec // G404: temp file suffix does not require cryptographic randomness
 		tmp, err := c.root.OpenFile(relTmp, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)

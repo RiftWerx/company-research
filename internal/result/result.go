@@ -40,6 +40,52 @@ type FilingResult struct {
 	Date        string `json:"date"` // YYYY-MM-DD
 }
 
+// ChargeClassificationResult is a charge classification in CompanyBriefResult.ActiveCharges.
+type ChargeClassificationResult struct {
+	Description string `json:"description"`
+	Type        string `json:"type"`
+}
+
+// ChargeResult is a single entry in CompanyBriefResult.ActiveCharges.
+type ChargeResult struct {
+	Classification  ChargeClassificationResult `json:"classification"`
+	Status          string                     `json:"status"`
+	DeliveredOn     string                     `json:"delivered_on"`
+	PersonsEntitled []string                   `json:"persons_entitled,omitempty"`
+}
+
+// PSCResult is a single entry in CompanyBriefResult.ActivePSC.
+type PSCResult struct {
+	Name             string   `json:"name"`
+	Kind             string   `json:"kind"`
+	NaturesOfControl []string `json:"natures_of_control,omitempty"`
+	NotifiedOn       string   `json:"notified_on"`
+}
+
+// InsolvencyDateResult is a single named milestone date within an InsolvencyCaseResult.
+type InsolvencyDateResult struct {
+	Type string `json:"type"`
+	Date string `json:"date"`
+}
+
+// InsolvencyCaseResult is a single entry in CompanyBriefResult.InsolvencyCases.
+type InsolvencyCaseResult struct {
+	CaseType string                 `json:"case_type"`
+	Number   string                 `json:"number,omitempty"`
+	Dates    []InsolvencyDateResult `json:"dates,omitempty"`
+}
+
+// CompanyBriefResult is the response for get_company_brief / get-company-brief.
+type CompanyBriefResult struct {
+	Profile                     ProfileResult          `json:"profile"`
+	LatestAccounts              *FilingResult          `json:"latest_accounts,omitempty"`
+	LatestConfirmationStatement *FilingResult          `json:"latest_confirmation_statement,omitempty"`
+	ActiveCharges               []ChargeResult         `json:"active_charges,omitempty"`
+	ActivePSC                   []PSCResult            `json:"active_psc,omitempty"`
+	InsolvencyCases             []InsolvencyCaseResult `json:"insolvency_cases,omitempty"`
+	RecentFilings               []FilingResult         `json:"recent_filings"`
+}
+
 // FetchResult is the response for fetch_filing / fetch-filing and get_latest / get-latest.
 type FetchResult struct {
 	DocumentID     string `json:"document_id"`

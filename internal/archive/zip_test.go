@@ -3,6 +3,7 @@ package archive_test
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -153,6 +154,21 @@ func TestExtractAll(t *testing.T) {
 			assert.Equal(t, "report-2024-T01.xhtml", entries[0].Filename)
 		})
 
+		t.Run("should treat backslashes as archive separators", func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			zipData := buildZip(t, [][2]string{{`dir\subdir\report.xhtml`, "<html/>"}})
+
+			// Act
+			entries, _, err := archive.ExtractAll(zipData, limit)
+
+			// Assert
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+			assert.Equal(t, "report.xhtml", entries[0].Filename)
+		})
+
 		t.Run("should return error for entry with unusable base name", func(t *testing.T) {
 			t.Parallel()
 
@@ -163,7 +179,45 @@ func TestExtractAll(t *testing.T) {
 			_, _, err := archive.ExtractAll(zipData, limit)
 
 			// Assert
-			assert.ErrorContains(t, err, "unusable base name")
+			assert.ErrorContains(t, err, "unsafe filename")
+		})
+
+		t.Run("should reject unsafe archive paths", func(t *testing.T) {
+			t.Parallel()
+
+			tests := []struct {
+				name     string
+				filename string
+			}{
+				{name: "empty", filename: ""},
+				{name: "current_directory", filename: "."},
+				{name: "parent_directory", filename: ".."},
+				{name: "slash_traversal", filename: "../../index.db"},
+				{name: "backslash_traversal", filename: `..\..\index.db`},
+				{name: "absolute", filename: "/tmp/report.xhtml"},
+				{name: "drive_absolute", filename: `C:\temp\report.xhtml`},
+				{name: "drive_relative", filename: `C:report.xhtml`},
+				{name: "unc", filename: `\\server\share\report.xhtml`},
+				{name: "repeated_separator", filename: "dir//report.xhtml"},
+				{name: "trailing_backslash", filename: `dir\`},
+				{name: "embedded_current_directory", filename: "dir/./report.xhtml"},
+				{name: "embedded_parent_directory", filename: "dir/../report.xhtml"},
+			}
+
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					t.Parallel()
+
+					// Arrange
+					zipData := buildZip(t, [][2]string{{test.filename, "content"}})
+
+					// Act
+					_, _, err := archive.ExtractAll(zipData, limit)
+
+					// Assert
+					assert.ErrorContains(t, err, "unsafe filename")
+				})
+			}
 		})
 	})
 
@@ -219,6 +273,75 @@ func TestExtractAll(t *testing.T) {
 			assert.Equal(t, "report.xhtml", entries[0].Filename)
 			// The second occurrence gets the _2 suffix.
 			assert.Equal(t, "report_2.xhtml", entries[1].Filename)
+		})
+
+		t.Run("should avoid collisions with a generated suffix", func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			zipData := buildZip(t, [][2]string{
+				{"report.xhtml", "primary content is largest"},
+				{"report.xhtml", "duplicate"},
+				{"report_2.xhtml", "natural"},
+			})
+
+			// Act
+			entries, _, err := archive.ExtractAll(zipData, limit)
+
+			// Assert
+			require.NoError(t, err)
+			assert.Equal(t, []string{"report.xhtml", "report_2.xhtml", "report_2_2.xhtml"}, []string{
+				entries[0].Filename,
+				entries[1].Filename,
+				entries[2].Filename,
+			})
+			assert.True(t, entries[0].IsPrimary)
+		})
+
+		t.Run("should retry suffixes already used by natural filenames", func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			zipData := buildZip(t, [][2]string{
+				{"report.xhtml", "primary content is largest"},
+				{"report_2.xhtml", "natural"},
+				{"report.xhtml", "duplicate one"},
+				{"report.xhtml", "duplicate two"},
+			})
+
+			// Act
+			entries, _, err := archive.ExtractAll(zipData, limit)
+
+			// Assert
+			require.NoError(t, err)
+			assert.Equal(t, []string{"report.xhtml", "report_2.xhtml", "report_3.xhtml", "report_4.xhtml"}, []string{
+				entries[0].Filename,
+				entries[1].Filename,
+				entries[2].Filename,
+				entries[3].Filename,
+			})
+		})
+
+		t.Run("should preserve multiple extensions while allocating suffixes", func(t *testing.T) {
+			t.Parallel()
+
+			// Arrange
+			zipData := buildZip(t, [][2]string{
+				{"report.tar.gz", "primary content is largest"},
+				{"report.tar.gz", "duplicate"},
+				{"report.tar_2.gz", "natural"},
+			})
+
+			// Act
+			entries, _, err := archive.ExtractAll(zipData, limit)
+
+			// Assert
+			require.NoError(t, err)
+			assert.Equal(t, []string{"report.tar.gz", "report.tar_2.gz", "report.tar_2_2.gz"}, []string{
+				entries[0].Filename,
+				entries[1].Filename,
+				entries[2].Filename,
+			})
 		})
 
 		t.Run("should cap at MaxEntries and report true total", func(t *testing.T) {
@@ -289,6 +412,58 @@ func TestExtractAll(t *testing.T) {
 		// Assert
 		assert.ErrorContains(t, err, "open zip")
 	})
+}
+
+func TestExtractAllManyDuplicateNames(t *testing.T) {
+	t.Parallel()
+
+	const count = 10_000
+	files := make([][2]string, count)
+	for i := range files {
+		files[i] = [2]string{"report.xhtml", ""}
+	}
+	zipData := buildZip(t, files)
+
+	entries, total, err := archive.ExtractAll(zipData, 0)
+
+	require.NoError(t, err)
+	assert.Equal(t, count, total)
+	want := make([]archive.Entry, archive.MaxEntries)
+	for i := range want {
+		name := "report.xhtml"
+		if i > 0 {
+			name = fmt.Sprintf("report_%d.xhtml", i+1)
+		}
+		want[i] = archive.Entry{
+			Filename: name, Content: []byte{}, ContentType: "application/xhtml+xml", IsPrimary: i == 0,
+		}
+	}
+	assert.Equal(t, want, entries)
+}
+
+func BenchmarkExtractAllDuplicateNames(b *testing.B) {
+	for _, count := range []int{1_000, 5_000, 10_000} {
+		b.Run(fmt.Sprintf("entries_%d", count), func(b *testing.B) {
+			var buf bytes.Buffer
+			w := zip.NewWriter(&buf)
+			for range count {
+				if _, err := w.CreateHeader(&zip.FileHeader{Name: "report.xhtml", Method: zip.Store}); err != nil {
+					b.Fatal(err)
+				}
+			}
+			if err := w.Close(); err != nil {
+				b.Fatal(err)
+			}
+			zipData := buf.Bytes()
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if _, _, err := archive.ExtractAll(zipData, 0); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }
 
 func TestReadBody(t *testing.T) {
